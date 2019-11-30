@@ -4,6 +4,11 @@ using Oceananigans
 
 using Oceananigans.Diagnostics: cell_advection_timescale
 
+# Workaround for plotting many frames.
+# See: https://github.com/JuliaPlots/Plots.jl/issues/1723
+import GR
+GR.inline("png")
+
 ####
 #### Some useful constants
 ####
@@ -181,19 +186,39 @@ while model.clock.time < end_time
     T_slice = rotr90(model.tracers.T.data[1:Nx, 1:Ny, k])
     S_slice = rotr90(model.tracers.S.data[1:Nx, 1:Ny, k])
 
-    xC, xF, yC = model.grid.xC, model.grid.xF, model.grid.yC
+    xC, xF, yC = model.grid.xC ./ km, model.grid.xF ./ km, model.grid.yC ./ km
     pu = contour(xF, yC, u_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
     pw = contour(xC, yC, w_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
     pT = contour(xC, yC, T_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pS = contour(xC, yC, S_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline, clims=(33, 35))
+    pS = contour(xC, yC, S_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline,  clims=(33, 35))
 
     t = @sprintf("%.2f days", model.clock.time / day)
     # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
-    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
+    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t @ z = -500 m" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
 
     i = Int(model.clock.iteration / Ni)
     i_str = lpad(i, 5, "0")
-    savefig(pp, "frame_$i_str.png")
+    savefig(pp, "500m_frame_$i_str.png")
+    
+    k = Int(Nz)
+    u_slice = rotr90(model.velocities.u.data[1:Nx+1, 1:Ny, k])
+    w_slice = rotr90(model.velocities.w.data[1:Nx, 1:Ny, k])
+    T_slice = rotr90(model.tracers.T.data[1:Nx, 1:Ny, k])
+    S_slice = rotr90(model.tracers.S.data[1:Nx, 1:Ny, k])
+
+    pu = contour(xF, yC, u_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.5, 0.5))
+    pw = contour(xC, yC, w_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
+    pT = contour(xC, yC, T_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
+    pS = contour(xC, yC, S_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline,  clims=(33, 35))
+
+    t = @sprintf("%.2f days", model.clock.time / day)
+    # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
+    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t @ z = -16 m" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
+
+    i = Int(model.clock.iteration / Ni)
+    i_str = lpad(i, 5, "0")
+    savefig(pp, "surface_frame_$i_str.png")
+    
     i = i+1
 
     # Calculate simulation progress in %.
