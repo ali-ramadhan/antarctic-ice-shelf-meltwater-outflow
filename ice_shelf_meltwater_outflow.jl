@@ -1,7 +1,8 @@
-using DelimitedFiles
+using DelimitedFiles, Printf
+using Interpolations, Plots
 using Oceananigans
-using Interpolations
-using Plots
+
+using Oceananigans.Diagnostics: cell_advection_timescale
 
 ####
 #### Some useful constants
@@ -147,9 +148,9 @@ fields = Dict(
 :kappaS => model -> Array(model.diffusivities.κₑ.S.data.parent)
 )
 
-field_writer = JLD2OutputWriter(model, fields; dir=base_dir, prefix="meltwater_outflow_point_source_fields",
-                                init=init_save_parameters_and_bcs,
-                                max_filesize=100GiB, interval=6hour, force=true, verbose=true)
+# field_writer = JLD2OutputWriter(model, fields; dir=base_dir, prefix="meltwater_outflow_point_source_fields",
+#                                 init=init_save_parameters_and_bcs,
+#                                 max_filesize=100GiB, interval=6hour, force=true, verbose=true)
 # push!(model.output_writers, field_writer)
 
 ####
@@ -170,7 +171,20 @@ Ni = 50
 while model.clock.time < end_time
     walltime = @elapsed time_step!(model; Nt=Ni, Δt=wizard.Δt)
 
-    
+    k = Int(Nz/2)
+    u_slice = rotr90(model.velocities.u.data[1:Nx+1, 1:Ny, k])
+    w_slice = rotr90(model.velocities.w.data[1:Nx, 1:Ny, k])
+    T_slice = rotr90(model.tracers.T.data[1:Nx, 1:Ny, k])
+    S_slice = rotr90(model.tracers.S.data[1:Nx, 1:Ny, k])
+
+    xC, xF, yC = model.grid.xC, model.grid.xF, model.grid.yC
+    pu = contour(xF, yC, u_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
+    pw = contour(xC, yC, w_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
+    pT = contour(xC, yC, T_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:thermal)
+    pS = contour(xC, yC, S_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:haline) 
+
+    t = @sprintf("%.2f hours", model.clock.time / hour)
+    display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
 
     # Calculate simulation progress in %.
     progress = 100 * (model.clock.time / end_time)
