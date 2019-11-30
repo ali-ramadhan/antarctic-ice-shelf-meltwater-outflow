@@ -42,7 +42,7 @@ T_source = -1
 S_source = 33.95
 
 # Index of the point source at the middle of the southern wall.
-source_index = (1, Int(Ny/2), Int(Nz/2))
+source_index = (Int(Nx/2), 1, Int(Nz/2))
 
 @inline T_point_source(i, j, k, grid, time, U, C, p) =
     @inbounds ifelse((i, j, k) == p.source_index, -p.λ * (C.T[i, j, k] - p.T_source), 0)
@@ -155,6 +155,10 @@ fields = Dict(
 
 ####
 #### Write out slices to JLD2
+####
+
+####
+#### Print banner
 ####
 
 ####
