@@ -1,4 +1,7 @@
+using DelimitedFiles
 using Oceananigans
+using Interpolations
+using Plots
 
 ####
 #### Some useful constants
@@ -44,11 +47,67 @@ model = Model(
            architecture = arch,
              float_type = FT,
                    grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(-Lx/2, Lx/2), y=(0, Ly), z=(-Lz, 0)),
-               coriolis = FPlane(rotation_rate=Ω_Earth, latituide=φ),
+               coriolis = FPlane(rotation_rate=Ω_Earth, latitude=φ),
                buoyancy = SeawaterBuoyancy(),
                 closure = AnisotropicMinimumDissipation(),
     boundary_conditions = bcs
 )
+
+####
+#### Read reference profiles from disk
+#### As these profiles are derived from observations, we will have to do some
+#### post-processing to be able to use them as initial conditions.
+####
+#### We will get rid of all NaN values and use the remaining data to linearly
+#### interpolate the T and S profiles to the model's grid.
+####
+
+# The pressure is given in dbar so we will convert to depth (meters) assuming
+# 1 dbar = 1 meter (this is approximately true).
+z = readdlm("reference_pressure.txt")[:]
+
+# We also flatten the arrays by indexing with a Colon [:] to convert the arrays
+# from N×1 arrays to 1D arrays of length N.
+T = readdlm("reference_temperature.txt")[:]
+S = readdlm("reference_salinity.txt")[:]
+
+# Get the indices of all the non-NaN values.
+T_good_inds = findall(!isnan, T)
+S_good_inds = findall(!isnan, S)
+
+# Create T and S arrays that do not contain NaNs, along with corresponding
+# z values.
+T_good = T[T_good_inds]
+S_good = S[S_good_inds]
+
+z_T = z[T_good_inds]
+z_S = z[S_good_inds]
+
+# Linearly interpolate T and S profiles to model grid.
+Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Line())
+Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Line())
+
+zC = model.grid.zC
+T₀ = Ti.(-zC)
+S₀ = Si.(-zC)
+
+# Plot and save figures of reference and interpolated profiles.
+T_fpath = "temperature_profiles.png"
+S_fpath = "salinity_profiles.png"
+
+T_plot = plot(T_good, -z_T, label="Reference", xlabel="Temperature (C)", ylabel="Depth (m)", grid=false, dpi=300)
+plot!(T_plot, T₀, zC, label="Interpolation")
+
+@info "Saving temperature profiles to $T_fpath..."
+savefig(T_plot, T_fpath)
+
+S_plot = plot(S_good, -z_S, label="Reference", xlabel="Salinity (ppt)", ylabel="Depth (m)", grid=false, dpi=300)
+plot!(S_plot, S₀, zC, label="Interpolation")
+
+@info "Saving temperature profiles to $S_fpath..."
+savefig(S_plot, S_fpath)
+
+exit()
 
 ####
 #### Setting up initial conditions
