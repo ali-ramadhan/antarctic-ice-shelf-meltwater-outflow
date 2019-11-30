@@ -18,9 +18,9 @@ const φ = -75  # degrees latitude
 arch = CPU()
 FT = Float64
 
-Nx = 128
-Ny = 128
-Nz = 100
+Nx = 32
+Ny = 32
+Nz = 32
 
 Lx = 10km
 Ly = 10km
@@ -29,15 +29,28 @@ Lz = 1km
 end_time = 7day
 
 ####
-#### Set up boundary conditions
+#### Set up source of meltwater: We will implement a source of meltwater as
+#### a relaxation term towards a reference T and S value at a single point.
+#### This is in effect weakly imposing a Value/Dirchlet boundary condition.
 ####
 
-# Point source of freshwater with S = 30 ppt on the middle of the Southern wall.
-Sᶠ = 35 * ones(Ny, Nz)
-Sᶠ[Int(Ny/2), Int(Nz/2)] += -5
+λ = 1/(1minute)  # Relaxation timescale [s⁻¹].
 
-S_bcs = ChannelBCs(south = BoundaryCondition(Value, Sᶠ))
-bcs = ChannelSolutionBCs(S = S_bcs)
+# Temperature and salinity of the meltwater outflow.
+T_source = -1
+S_source = 33.95
+
+# Index of the point source at the middle of the southern wall.
+source_index = (1, Int(Ny/2), Int(Nz/2))
+
+@inline T_point_source(i, j, k, grid, time, U, C, p) =
+    @inbounds ifelse((i, j, k) == p.source_index, -p.λ * (C.T[i, j, k] - p.T_source), 0)
+
+@inline S_point_source(i, j, k, grid, time, U, C, p) =
+    @inbounds ifelse((i, j, k) == p.source_index, -p.λ * (C.S[i, j, k] - p.S_source), 0)
+
+forcing = ModelForcing(T = T_point_source, S = S_point_source)
+params = (source_index=source_index, T_source=T_source, S_source=S_source, λ=λ)
 
 ####
 #### Set up model
@@ -50,7 +63,9 @@ model = Model(
                coriolis = FPlane(rotation_rate=Ω_Earth, latitude=φ),
                buoyancy = SeawaterBuoyancy(),
                 closure = AnisotropicMinimumDissipation(),
-    boundary_conditions = bcs
+    boundary_conditions = ChannelSolutionBCs(),
+                forcing = forcing,
+             parameters = params
 )
 
 ####
@@ -107,18 +122,15 @@ plot!(S_plot, S₀, zC, label="Interpolation")
 @info "Saving temperature profiles to $S_fpath..."
 savefig(S_plot, S_fpath)
 
-exit()
-
 ####
 #### Setting up initial conditions
 ####
 
-∂T∂z = 0.01
-T₀(x, y, z) = 10 + ∂T∂z * z
-S₀(x, y, z) = 35
+T₀_3D = repeat(reshape(T₀, 1, 1, Nz), Nx, Ny, 1)
+S₀_3D = repeat(reshape(S₀, 1, 1, Nz), Nx, Ny, 1)
 
-set!(model.tracers.T, T₀)
-set!(model.tracers.S, S₀)
+set!(model.tracers.T, T₀_3D)
+set!(model.tracers.S, S₀_3D)
 
 ####
 #### Write out 3D fields to JLD2
@@ -138,7 +150,7 @@ fields = Dict(
 field_writer = JLD2OutputWriter(model, fields; dir=base_dir, prefix="meltwater_outflow_point_source_fields",
                                 init=init_save_parameters_and_bcs,
                                 max_filesize=100GiB, interval=6hour, force=true, verbose=true)
-push!(model.output_writers, field_writer)
+# push!(model.output_writers, field_writer)
 
 ####
 #### Write out slices to JLD2
@@ -157,6 +169,8 @@ Ni = 50
 
 while model.clock.time < end_time
     walltime = @elapsed time_step!(model; Nt=Ni, Δt=wizard.Δt)
+
+    
 
     # Calculate simulation progress in %.
     progress = 100 * (model.clock.time / end_time)
