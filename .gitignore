@@ -4,6 +4,8 @@
 deps/deps.jl
 
 # Model output
-*.png
 *.nc
 *.jld2
+*.png
+*.gif
+*.mp4
