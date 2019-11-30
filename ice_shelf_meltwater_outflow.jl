@@ -184,11 +184,17 @@ while model.clock.time < end_time
     xC, xF, yC = model.grid.xC, model.grid.xF, model.grid.yC
     pu = contour(xF, yC, u_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
     pw = contour(xC, yC, w_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
-    pT = contour(xC, yC, T_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:thermal)
-    pS = contour(xC, yC, S_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:haline) 
+    pT = contour(xC, yC, T_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:thermal, clims=(-2, 1))
+    pS = contour(xC, yC, S_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:haline, clims=(33, 35))
 
     t = @sprintf("%.2f hours", model.clock.time / hour)
-    display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
+    # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
+    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
+
+    i = Int(model.clock.iteration / Ni)
+    i_str = lpad(i, 5, "0")
+    savefig(pp, "frame_$i_str.png")
+    i = i+1
 
     # Calculate simulation progress in %.
     progress = 100 * (model.clock.time / end_time)
