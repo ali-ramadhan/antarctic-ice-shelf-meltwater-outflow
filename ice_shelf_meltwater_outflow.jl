@@ -182,12 +182,12 @@ while model.clock.time < end_time
     S_slice = rotr90(model.tracers.S.data[1:Nx, 1:Ny, k])
 
     xC, xF, yC = model.grid.xC, model.grid.xF, model.grid.yC
-    pu = contour(xF, yC, u_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
-    pw = contour(xC, yC, w_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
-    pT = contour(xC, yC, T_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pS = contour(xC, yC, S_slice; xlabel="x", ylabel="y", fill=true, levels=10, color=:haline, clims=(33, 35))
+    pu = contour(xF, yC, u_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
+    pw = contour(xC, yC, w_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
+    pT = contour(xC, yC, T_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
+    pS = contour(xC, yC, S_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline, clims=(33, 35))
 
-    t = @sprintf("%.2f hours", model.clock.time / hour)
+    t = @sprintf("%.2f days", model.clock.time / day)
     # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
     pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
 
@@ -217,6 +217,6 @@ while model.clock.time < end_time
     update_Δt!(wizard, model)
 
     # Print progress statement.
-    @printf("[%06.2f%%] i: %d, t: %5.2f days, umax: (%6.3g, %6.3g, %6.3g) m/s, CFL: %6.4g, νκmax: (%6.3g, %6.3g), νκCFL: (%6.4g, %6.4g), next Δt: %8.5g, ⟨wall time⟩: %s\n",
+    @printf("[%06.2f%%] i: %d, t: %5.2f days, umax: (%6.3g, %6.3g, %6.3g) m/s, CFL: %6.4g, νκmax: (%6.3g, %6.3g), νκCFL: (%6.4g, %6.4g), next Δt: %8.5g s, ⟨wall time⟩: %s\n",
             progress, model.clock.iteration, model.clock.time / day, umax, vmax, wmax, CFL, νmax, κmax, νCFL, κCFL, wizard.Δt, prettytime(walltime / Ni))
 end
