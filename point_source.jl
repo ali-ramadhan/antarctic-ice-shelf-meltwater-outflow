@@ -20,7 +20,7 @@ FT = Float64
 
 Nx = 128
 Ny = 128
-Nz = 32
+Nz = 100
 
 Lx = 10km
 Ly = 10km
@@ -84,8 +84,8 @@ z_T = z[T_good_inds]
 z_S = z[S_good_inds]
 
 # Linearly interpolate T and S profiles to model grid.
-Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Line())
-Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Line())
+Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Flat())
+Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Flat())
 
 zC = model.grid.zC
 T₀ = Ti.(-zC)
