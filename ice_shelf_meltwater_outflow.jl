@@ -239,6 +239,26 @@ while model.clock.time < end_time
     i_str = lpad(i, 5, "0")
     savefig(pp, "calving_front_frame_$i_str.png")
 
+    idx = Int(Nx/2)
+    u_slice = rotr90(model.velocities.u.data[idx, 1:Ny, 1:Nz])
+    w_slice = rotr90(model.velocities.w.data[idx, 1:Ny, 1:Nz+1])
+    T_slice = rotr90(model.tracers.T.data[idx, 1:Ny, 1:Nz])
+    S_slice = rotr90(model.tracers.S.data[idx, 1:Ny, 1:Nz])
+
+    yC = model.grid.yC ./ km
+    pu = contour(yC, zC, u_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.5, 0.5))
+    pw = contour(yC, zF, w_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
+    pT = contour(yC, zC, T_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
+    pS = contour(yC, zC, S_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:haline,  clims=(33, 35))
+
+    t = @sprintf("%.2f days", model.clock.time / day)
+    # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
+    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t @ x=0" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
+
+    i = Int(model.clock.iteration / Ni)
+    i_str = lpad(i, 5, "0")
+    savefig(pp, "cross_channel_frame_$i_str.png")
+
     i = i+1
 
     # Calculate simulation progress in %.
