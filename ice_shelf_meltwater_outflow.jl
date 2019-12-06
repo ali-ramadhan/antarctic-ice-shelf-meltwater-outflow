@@ -66,6 +66,7 @@ model = Model(
            architecture = arch,
              float_type = FT,
                    grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(-Lx/2, Lx/2), y=(0, Ly), z=(-Lz, 0)),
+                tracers = (:T, :S, :meltwater),
                coriolis = FPlane(rotation_rate=Ω_Earth, latitude=φ),
                buoyancy = SeawaterBuoyancy(),
                 closure = AnisotropicMinimumDissipation(),
@@ -138,6 +139,9 @@ S₀_3D = repeat(reshape(S₀, 1, 1, Nz), Nx, Ny, 1)
 set!(model.tracers.T, T₀_3D)
 set!(model.tracers.S, S₀_3D)
 
+# Set meltwater concentration to 1 at the source.
+model.tracers.meltwater.data[source_index...] = 1
+
 ####
 #### Write out 3D fields to JLD2
 ####
@@ -177,43 +181,49 @@ wizard = TimeStepWizard(cfl=0.3, Δt=1second, max_change=1.2, max_Δt=30second)
 # statement and updating the adaptive time step.
 Ni = 50
 
+C_mw = model.tracers.meltwater
+
 while model.clock.time < end_time
-    walltime = @elapsed time_step!(model; Nt=Ni, Δt=wizard.Δt)
+    walltime = @elapsed begin
+        time_step!(model; Nt=Ni, Δt=wizard.Δt)
+
+        # Normalize meltwater concentration to be 0 <= C_mw <= 1.
+        C_mw.data .= max.(0, C_mw.data)
+        C_mw.data .= C_mw.data ./ maximum(C_mw.data)
+    end
 
     k = Int(Nz/2)
     u_slice = rotr90(model.velocities.u.data[1:Nx+1, 1:Ny, k])
     w_slice = rotr90(model.velocities.w.data[1:Nx, 1:Ny, k])
     T_slice = rotr90(model.tracers.T.data[1:Nx, 1:Ny, k])
-    S_slice = rotr90(model.tracers.S.data[1:Nx, 1:Ny, k])
+    C_slice = rotr90(model.tracers.meltwater.data[1:Nx, 1:Ny, k])
 
     xC, xF, yC = model.grid.xC ./ km, model.grid.xF ./ km, model.grid.yC ./ km
     pu = contour(xF, yC, u_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
     pw = contour(xC, yC, w_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
     pT = contour(xC, yC, T_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pS = contour(xC, yC, S_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline,  clims=(33, 35))
+    pC = contour(xC, yC, C_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline,  clims=(0, 1))
 
     t = @sprintf("%.2f days", model.clock.time / day)
-    # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
-    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t @ z = -500 m" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
+    pp = plot(pu, pw, pT, pC, title=["u (m/s), t=$t @ z = -500 m" "w (m/s)" "T (C)" "meltwater"], dpi=300, show=true)
 
     i = Int(model.clock.iteration / Ni)
     i_str = lpad(i, 5, "0")
     savefig(pp, "500m_frame_$i_str.png")
-    
+
     k = Int(Nz)
     u_slice = rotr90(model.velocities.u.data[1:Nx+1, 1:Ny, k])
     w_slice = rotr90(model.velocities.w.data[1:Nx, 1:Ny, k])
     T_slice = rotr90(model.tracers.T.data[1:Nx, 1:Ny, k])
-    S_slice = rotr90(model.tracers.S.data[1:Nx, 1:Ny, k])
+    C_slice = rotr90(model.tracers.meltwater.data[1:Nx, 1:Ny, k])
 
     pu = contour(xF, yC, u_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.5, 0.5))
     pw = contour(xC, yC, w_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
     pT = contour(xC, yC, T_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pS = contour(xC, yC, S_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline,  clims=(33, 35))
+    pC = contour(xC, yC, C_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline,  clims=(0, 1))
 
     t = @sprintf("%.2f days", model.clock.time / day)
-    # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
-    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t @ z = -16 m" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
+    pp = plot(pu, pw, pT, pC, title=["u (m/s), t=$t @ z = -16 m" "w (m/s)" "T (C)" "meltwater"], dpi=300, show=true)
 
     i = Int(model.clock.iteration / Ni)
     i_str = lpad(i, 5, "0")
@@ -223,17 +233,16 @@ while model.clock.time < end_time
     u_slice = rotr90(model.velocities.u.data[1:Nx+1, j, 1:Nz])
     w_slice = rotr90(model.velocities.w.data[1:Nx, j, 1:Nz+1])
     T_slice = rotr90(model.tracers.T.data[1:Nx, j, 1:Nz])
-    S_slice = rotr90(model.tracers.S.data[1:Nx, j, 1:Nz])
+    C_slice = rotr90(model.tracers.meltwater.data[1:Nx, j, 1:Nz])
 
     zF = model.grid.zF ./ km
     pu = contour(xF, zC, u_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.5, 0.5))
     pw = contour(xC, zF, w_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
     pT = contour(xC, zC, T_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pS = contour(xC, zC, S_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:haline,  clims=(33, 35))
+    pC = contour(xC, zC, C_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:haline,  clims=(0, 1))
 
     t = @sprintf("%.2f days", model.clock.time / day)
-    # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
-    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t @ y=0" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
+    pp = plot(pu, pw, pT, pC, title=["u (m/s), t=$t @ y=0" "w (m/s)" "T (C)" "meltwater"], dpi=300, show=true)
 
     i = Int(model.clock.iteration / Ni)
     i_str = lpad(i, 5, "0")
@@ -243,17 +252,16 @@ while model.clock.time < end_time
     u_slice = rotr90(model.velocities.u.data[idx, 1:Ny, 1:Nz])
     w_slice = rotr90(model.velocities.w.data[idx, 1:Ny, 1:Nz+1])
     T_slice = rotr90(model.tracers.T.data[idx, 1:Ny, 1:Nz])
-    S_slice = rotr90(model.tracers.S.data[idx, 1:Ny, 1:Nz])
+    C_slice = rotr90(model.tracers.meltwater.data[idx, 1:Ny, 1:Nz])
 
     yC = model.grid.yC ./ km
     pu = contour(yC, zC, u_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.5, 0.5))
     pw = contour(yC, zF, w_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
     pT = contour(yC, zC, T_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pS = contour(yC, zC, S_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:haline,  clims=(33, 35))
+    pC = contour(yC, zC, C_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:haline,  clims=(0, 1))
 
     t = @sprintf("%.2f days", model.clock.time / day)
-    # display(plot(pu, pw, pT, pS, title=["u (m/s), t=$t" "w (m/s)" "T (C)" "S (ppt)"], show=true))
-    pp = plot(pu, pw, pT, pS, title=["u (m/s), t=$t @ x=0" "w (m/s)" "T (C)" "S (ppt)"], dpi=300, show=true)
+    pp = plot(pu, pw, pT, pC, title=["u (m/s), t=$t @ x=0" "w (m/s)" "T (C)" "meltwater"], dpi=300, show=true)
 
     i = Int(model.clock.iteration / Ni)
     i_str = lpad(i, 5, "0")
