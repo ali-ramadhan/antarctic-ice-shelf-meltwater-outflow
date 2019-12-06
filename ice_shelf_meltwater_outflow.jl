@@ -140,7 +140,7 @@ set!(model.tracers.T, T₀_3D)
 set!(model.tracers.S, S₀_3D)
 
 # Set meltwater concentration to 1 at the source.
-model.tracers.meltwater.data[source_index...] = 1
+model.tracers.meltwater.data[source_index...] .= 1
 
 ####
 #### Write out 3D fields to JLD2
@@ -188,6 +188,7 @@ while model.clock.time < end_time
         time_step!(model; Nt=Ni, Δt=wizard.Δt)
 
         # Normalize meltwater concentration to be 0 <= C_mw <= 1.
+        C_mw.data[source_index...] .= 1
         C_mw.data .= max.(0, C_mw.data)
         C_mw.data .= C_mw.data ./ maximum(C_mw.data)
     end
