@@ -49,14 +49,24 @@ S_source = 33.95
 # Index of the point source at the middle of the southern wall.
 source_index = (Int(Nx/2), 1, Int(Nz/2))
 
+# Point source
 @inline T_point_source(i, j, k, grid, time, U, C, p) =
     @inbounds ifelse((i, j, k) == p.source_index, -p.λ * (C.T[i, j, k] - p.T_source), 0)
 
 @inline S_point_source(i, j, k, grid, time, U, C, p) =
     @inbounds ifelse((i, j, k) == p.source_index, -p.λ * (C.S[i, j, k] - p.S_source), 0)
 
-forcing = ModelForcing(T = T_point_source, S = S_point_source)
+# Line source
+@inline T_line_source(i, j, k, grid, time, U, C, p) =
+    @inbounds ifelse((j, k) == (p.source_index[2], p.source_index[3]), -p.λ * (C.T[i, j, k] - p.T_source), 0)
+
+@inline S_line_source(i, j, k, grid, time, U, C, p) =
+    @inbounds ifelse((j, k) == (p.source_index[2], p.source_index[3]), -p.λ * (C.S[i, j, k] - p.S_source), 0)
+
 params = (source_index=source_index, T_source=T_source, S_source=S_source, λ=λ)
+
+# forcing = ModelForcing(T = T_point_source, S = S_point_source)
+forcing = ModelForcing(T = T_line_source, S = S_line_source)
 
 ####
 #### Set up model
@@ -140,7 +150,8 @@ set!(model.tracers.T, T₀_3D)
 set!(model.tracers.S, S₀_3D)
 
 # Set meltwater concentration to 1 at the source.
-model.tracers.meltwater.data[source_index...] .= 1
+# model.tracers.meltwater.data[source_index...] = 1  # Point source
+model.tracers.meltwater.data[:, source_index[2], source_index[3]] .= 1  # Line source
 
 ####
 #### Write out 3D fields to JLD2
@@ -188,7 +199,8 @@ while model.clock.time < end_time
         time_step!(model; Nt=Ni, Δt=wizard.Δt)
 
         # Normalize meltwater concentration to be 0 <= C_mw <= 1.
-        C_mw.data[source_index...] .= 1
+        # C_mw.data[source_index...] = 1  # Point source
+        C_mw.data[:, source_index[2], source_index[3]] .= 1  # Line source
         C_mw.data .= max.(0, C_mw.data)
         C_mw.data .= C_mw.data ./ maximum(C_mw.data)
     end
