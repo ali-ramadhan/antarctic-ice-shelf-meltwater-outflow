@@ -3,23 +3,24 @@ using Interpolations, Plots
 using Oceananigans
 
 using Oceananigans.Diagnostics: cell_advection_timescale
+using Oceananigans.OutputWriters: NetCDFOutputWriter
 
 # Workaround for plotting many frames.
 # See: https://github.com/JuliaPlots/Plots.jl/issues/1723
 import GR
 GR.inline("png")
 
-####
-#### Some useful constants
-####
+#####
+##### Some useful constants
+#####
 
 const km = 1000
 const Ω_Earth = 7.292115e-5  # [s⁻¹]
 const φ = -75  # degrees latitude
 
-####
-#### Model grid and domain size
-####
+#####
+##### Model grid and domain size
+#####
 
 arch = CPU()
 FT = Float64
@@ -34,11 +35,11 @@ Lz = 1km
 
 end_time = 7day
 
-####
-#### Set up source of meltwater: We will implement a source of meltwater as
-#### a relaxation term towards a reference T and S value at a single point.
-#### This is in effect weakly imposing a Value/Dirchlet boundary condition.
-####
+#####
+##### Set up source of meltwater: We will implement a source of meltwater as
+##### a relaxation term towards a reference T and S value at a single point.
+##### This is in effect weakly imposing a Value/Dirchlet boundary condition.
+#####
 
 λ = 1/(1minute)  # Relaxation timescale [s⁻¹].
 
@@ -68,9 +69,9 @@ params = (source_index=source_index, T_source=T_source, S_source=S_source, λ=λ
 # forcing = ModelForcing(T = T_point_source, S = S_point_source)
 forcing = ModelForcing(T = T_line_source, S = S_line_source)
 
-####
-#### Set up model
-####
+#####
+##### Set up model
+#####
 
 model = Model(
            architecture = arch,
@@ -85,14 +86,14 @@ model = Model(
              parameters = params
 )
 
-####
-#### Read reference profiles from disk
-#### As these profiles are derived from observations, we will have to do some
-#### post-processing to be able to use them as initial conditions.
-####
-#### We will get rid of all NaN values and use the remaining data to linearly
-#### interpolate the T and S profiles to the model's grid.
-####
+#####
+##### Read reference profiles from disk
+##### As these profiles are derived from observations, we will have to do some
+##### post-processing to be able to use them as initial conditions.
+#####
+##### We will get rid of all NaN values and use the remaining data to linearly
+##### interpolate the T and S profiles to the model's grid.
+#####
 
 # The pressure is given in dbar so we will convert to depth (meters) assuming
 # 1 dbar = 1 meter (this is approximately true).
@@ -139,9 +140,9 @@ plot!(S_plot, S₀, zC, label="Interpolation")
 @info "Saving temperature profiles to $S_fpath..."
 savefig(S_plot, S_fpath)
 
-####
-#### Setting up initial conditions
-####
+#####
+##### Setting up initial conditions
+#####
 
 T₀_3D = repeat(reshape(T₀, 1, 1, Nz), Nx, Ny, 1)
 S₀_3D = repeat(reshape(S₀, 1, 1, Nz), Nx, Ny, 1)
@@ -153,37 +154,59 @@ set!(model.tracers.S, S₀_3D)
 # model.tracers.meltwater.data[source_index...] = 1  # Point source
 model.tracers.meltwater.data[:, source_index[2], source_index[3]] .= 1  # Line source
 
-####
-#### Write out 3D fields to JLD2
-####
+#####
+##### Write out 3D fields and slices to NetCDF
+#####
 
 fields = Dict(
-     :u => model -> Array(model.velocities.u.data.parent),
-     :v => model -> Array(model.velocities.v.data.parent),
-     :w => model -> Array(model.velocities.w.data.parent),
-     :T => model -> Array(model.tracers.T.data.parent),
-     :S => model -> Array(model.tracers.S.data.parent),
-    :nu => model -> Array(model.diffusivities.νₑ.data.parent),
-:kappaT => model -> Array(model.diffusivities.κₑ.T.data.parent),
-:kappaS => model -> Array(model.diffusivities.κₑ.S.data.parent)
+        "u" => model.velocities.u,
+        "v" => model.velocities.v,
+        "w" => model.velocities.w,
+        "T" => model.tracers.T,
+        "S" => model.tracers.S,
+"meltwater" => model.tracers.meltwater,
+       "nu" => model.diffusivities.νₑ,
+   "kappaT" => model.diffusivities.κₑ.T,
+   "kappaS" => model.diffusivities.κₑ.S
 )
 
-# field_writer = JLD2OutputWriter(model, fields; dir=base_dir, prefix="meltwater_outflow_point_source_fields",
-#                                 init=init_save_parameters_and_bcs,
-#                                 max_filesize=100GiB, interval=6hour, force=true, verbose=true)
-# push!(model.output_writers, field_writer)
+output_attributes = Dict(
+        "u" => Dict("longname" => "Velocity in the x-direction", "units" => "m/s"),
+        "v" => Dict("longname" => "Velocity in the y-direction", "units" => "m/s"),
+        "w" => Dict("longname" => "Velocity in the z-direction", "units" => "m/s"),
+        "T" => Dict("longname" => "Temperature", "units" => "C"),
+        "S" => Dict("longname" => "Salinity", "units" => "g/kg"),
+"meltwater" => Dict("longname" => "Meltwater concentration"),
+       "nu" => Dict("longname" => "Nonlinear LES viscosity", "units" => "m^2/s"),
+   "kappaT" => Dict("longname" => "Nonlinear LES diffusivity for temperature", "units" => "m^2/s"),
+   "kappaS" => Dict("longname" => "Nonlinear LES diffusivity for salinity", "units" => "m^2/s")
+)
 
-####
-#### Write out slices to JLD2
-####
 
-####
-#### Print banner
-####
+ow = model.output_writers
+ow[:field_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_fields.nc",
+                                       interval=6hour, output_attributes=output_attributes)
 
-####
-#### Time step!
-####
+k_source = Int(Nz/2)
+ow[:depth_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_source_xy_slice.nc",
+                                             interval=5minute, output_attributes=output_attributes, zC=k_source, zF=k_source)
+
+ow[:surface_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_surface_xy_slice.nc",
+                                               interval=5minute, output_attributes=output_attributes, zC=Nz, zF=Nz)
+
+ow[:calving_front_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_calving_front_xz_slice.nc",
+                                                     interval=5minute, output_attributes=output_attributes, yC=1, yF=2)
+
+ow[:along_channel_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_along_channel_yz_slice.nc",
+                                                     interval=5minute, output_attributes=output_attributes, xC=1, xF=1)
+
+#####
+##### Print banner
+#####
+
+#####
+##### Time step!
+#####
 
 # Wizard utility that calculates safe adaptive time steps.
 wizard = TimeStepWizard(cfl=0.3, Δt=1second, max_change=1.2, max_Δt=30second)
