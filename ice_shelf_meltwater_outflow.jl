@@ -221,11 +221,8 @@ while model.clock.time < end_time
     walltime = @elapsed begin
         time_step!(model; Nt=Ni, Δt=wizard.Δt)
 
-        # Normalize meltwater concentration to be 0 <= C_mw <= 1.
         # C_mw.data[source_index...] = 1  # Point source
         C_mw.data[:, source_index[2], source_index[3]] .= 1  # Line source
-        C_mw.data .= max.(0, C_mw.data)
-        C_mw.data .= C_mw.data ./ maximum(C_mw.data)
     end
 
     k = Int(Nz/2)
