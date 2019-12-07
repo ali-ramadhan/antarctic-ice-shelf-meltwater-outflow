@@ -1,9 +1,14 @@
 using DelimitedFiles, Printf
-using Interpolations
+using Interpolations, Plots
 using Oceananigans
 
-using Oceananigans.Diagnostics: cell_advection_timescale
+using Oceananigans.Diagnostics: AdvectiveCFL, DiffusiveCFL
 using Oceananigans.OutputWriters: NetCDFOutputWriter
+
+# Workaround for plotting many frames.
+# See: https://github.com/JuliaPlots/Plots.jl/issues/1723
+import GR
+GR.inline("png")
 
 #####
 ##### Some useful constants
@@ -205,10 +210,15 @@ ow[:along_channel_slice_writer] = NetCDFOutputWriter(model, fields; filename="ic
 # Wizard utility that calculates safe adaptive time steps.
 wizard = TimeStepWizard(cfl=0.3, Δt=1second, max_change=1.2, max_Δt=30second)
 
+# CFL utilities for reporting stability criterions.
+cfl = AdvectiveCFL(wizard)
+dcfl = DiffusiveCFL(wizard)
+
 # Number of time steps to perform at a time before printing a progress
 # statement and updating the adaptive time step.
 Ni = 50
 
+# Convinient alias
 C_mw = model.tracers.meltwater
 
 while model.clock.time < end_time
@@ -222,24 +232,21 @@ while model.clock.time < end_time
     # Calculate simulation progress in %.
     progress = 100 * (model.clock.time / end_time)
 
-    # Calculate advective CFL number.
+    # Find maximum velocities.
     umax = maximum(abs, model.velocities.u.data.parent)
     vmax = maximum(abs, model.velocities.v.data.parent)
     wmax = maximum(abs, model.velocities.w.data.parent)
-    CFL = wizard.Δt / cell_advection_timescale(model)
+    CFL = cfl(model)
 
-    # Calculate diffusive CFL number.
+    # Find maximum ν and κ.
     νmax = maximum(model.diffusivities.νₑ.data.parent)
     κmax = maximum(model.diffusivities.κₑ.T.data.parent)
-
-    Δ = min(model.grid.Δx, model.grid.Δy, model.grid.Δz)
-    νCFL = wizard.Δt / (Δ^2 / νmax)
-    κCFL = wizard.Δt / (Δ^2 / κmax)
+    dCFL = dcfl(model)
 
     # Calculate a new adaptive time step.
     update_Δt!(wizard, model)
 
     # Print progress statement.
-    @printf("[%06.2f%%] i: %d, t: %5.2f days, umax: (%6.3g, %6.3g, %6.3g) m/s, CFL: %6.4g, νκmax: (%6.3g, %6.3g), νκCFL: (%6.4g, %6.4g), next Δt: %8.5g s, ⟨wall time⟩: %s\n",
-            progress, model.clock.iteration, model.clock.time / day, umax, vmax, wmax, CFL, νmax, κmax, νCFL, κCFL, wizard.Δt, prettytime(walltime / Ni))
+    @printf("[%06.2f%%] i: %d, t: %5.2f days, umax: (%6.3g, %6.3g, %6.3g) m/s, CFL: %6.4g, νκmax: (%6.3g, %6.3g), νκCFL: %6.4g, next Δt: %8.5g s, ⟨wall time⟩: %s\n",
+            progress, model.clock.iteration, model.clock.time / day, umax, vmax, wmax, CFL, νmax, κmax, dCFL, wizard.Δt, prettytime(walltime / Ni))
 end
