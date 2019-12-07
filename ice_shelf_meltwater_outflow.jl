@@ -1,14 +1,9 @@
 using DelimitedFiles, Printf
-using Interpolations, Plots
+using Interpolations
 using Oceananigans
 
 using Oceananigans.Diagnostics: cell_advection_timescale
 using Oceananigans.OutputWriters: NetCDFOutputWriter
-
-# Workaround for plotting many frames.
-# See: https://github.com/JuliaPlots/Plots.jl/issues/1723
-import GR
-GR.inline("png")
 
 #####
 ##### Some useful constants
@@ -187,9 +182,8 @@ ow = model.output_writers
 ow[:field_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_fields.nc",
                                        interval=6hour, output_attributes=output_attributes)
 
-k_source = Int(Nz/2)
 ow[:depth_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_source_xy_slice.nc",
-                                             interval=5minute, output_attributes=output_attributes, zC=k_source, zF=k_source)
+                                             interval=5minute, output_attributes=output_attributes, zC=source_index[3], zF=source_index[3])
 
 ow[:surface_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_surface_xy_slice.nc",
                                                interval=5minute, output_attributes=output_attributes, zC=Nz, zF=Nz)
@@ -198,7 +192,7 @@ ow[:calving_front_slice_writer] = NetCDFOutputWriter(model, fields; filename="ic
                                                      interval=5minute, output_attributes=output_attributes, yC=1, yF=2)
 
 ow[:along_channel_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_along_channel_yz_slice.nc",
-                                                     interval=5minute, output_attributes=output_attributes, xC=1, xF=1)
+                                                     interval=5minute, output_attributes=output_attributes, xC=source_index[1], xF=source_index[1])
 
 #####
 ##### Print banner
@@ -224,83 +218,6 @@ while model.clock.time < end_time
         # C_mw.data[source_index...] = 1  # Point source
         C_mw.data[:, source_index[2], source_index[3]] .= 1  # Line source
     end
-
-    k = Int(Nz/2)
-    u_slice = rotr90(model.velocities.u.data[1:Nx+1, 1:Ny, k])
-    w_slice = rotr90(model.velocities.w.data[1:Nx, 1:Ny, k])
-    T_slice = rotr90(model.tracers.T.data[1:Nx, 1:Ny, k])
-    C_slice = rotr90(model.tracers.meltwater.data[1:Nx, 1:Ny, k])
-
-    xC, xF, yC = model.grid.xC ./ km, model.grid.xF ./ km, model.grid.yC ./ km
-    pu = contour(xF, yC, u_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
-    pw = contour(xC, yC, w_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
-    pT = contour(xC, yC, T_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pC = contour(xC, yC, C_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline,  clims=(0, 1))
-
-    t = @sprintf("%.2f days", model.clock.time / day)
-    pp = plot(pu, pw, pT, pC, title=["u (m/s), t=$t @ z = -500 m" "w (m/s)" "T (C)" "meltwater"], dpi=300, show=true)
-
-    i = Int(model.clock.iteration / Ni)
-    i_str = lpad(i, 5, "0")
-    savefig(pp, "500m_frame_$i_str.png")
-
-    k = Int(Nz)
-    u_slice = rotr90(model.velocities.u.data[1:Nx+1, 1:Ny, k])
-    w_slice = rotr90(model.velocities.w.data[1:Nx, 1:Ny, k])
-    T_slice = rotr90(model.tracers.T.data[1:Nx, 1:Ny, k])
-    C_slice = rotr90(model.tracers.meltwater.data[1:Nx, 1:Ny, k])
-
-    pu = contour(xF, yC, u_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.5, 0.5))
-    pw = contour(xC, yC, w_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
-    pT = contour(xC, yC, T_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pC = contour(xC, yC, C_slice; xlabel="x (km)", ylabel="y (km)", fill=true, levels=10, color=:haline,  clims=(0, 1))
-
-    t = @sprintf("%.2f days", model.clock.time / day)
-    pp = plot(pu, pw, pT, pC, title=["u (m/s), t=$t @ z = -16 m" "w (m/s)" "T (C)" "meltwater"], dpi=300, show=true)
-
-    i = Int(model.clock.iteration / Ni)
-    i_str = lpad(i, 5, "0")
-    savefig(pp, "surface_frame_$i_str.png")
-
-    j = 1
-    u_slice = rotr90(model.velocities.u.data[1:Nx+1, j, 1:Nz])
-    w_slice = rotr90(model.velocities.w.data[1:Nx, j, 1:Nz+1])
-    T_slice = rotr90(model.tracers.T.data[1:Nx, j, 1:Nz])
-    C_slice = rotr90(model.tracers.meltwater.data[1:Nx, j, 1:Nz])
-
-    zF = model.grid.zF ./ km
-    pu = contour(xF, zC, u_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.5, 0.5))
-    pw = contour(xC, zF, w_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
-    pT = contour(xC, zC, T_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pC = contour(xC, zC, C_slice; xlabel="x (km)", ylabel="z (km)", fill=true, levels=10, color=:haline,  clims=(0, 1))
-
-    t = @sprintf("%.2f days", model.clock.time / day)
-    pp = plot(pu, pw, pT, pC, title=["u (m/s), t=$t @ y=0" "w (m/s)" "T (C)" "meltwater"], dpi=300, show=true)
-
-    i = Int(model.clock.iteration / Ni)
-    i_str = lpad(i, 5, "0")
-    savefig(pp, "calving_front_frame_$i_str.png")
-
-    idx = Int(Nx/2)
-    u_slice = rotr90(model.velocities.u.data[idx, 1:Ny, 1:Nz])
-    w_slice = rotr90(model.velocities.w.data[idx, 1:Ny, 1:Nz+1])
-    T_slice = rotr90(model.tracers.T.data[idx, 1:Ny, 1:Nz])
-    C_slice = rotr90(model.tracers.meltwater.data[idx, 1:Ny, 1:Nz])
-
-    yC = model.grid.yC ./ km
-    pu = contour(yC, zC, u_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.5, 0.5))
-    pw = contour(yC, zF, w_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:balance, clims=(-0.2, 0.2))
-    pT = contour(yC, zC, T_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:thermal, clims=(-2, 1))
-    pC = contour(yC, zC, C_slice; xlabel="y (km)", ylabel="z (km)", fill=true, levels=10, color=:haline,  clims=(0, 1))
-
-    t = @sprintf("%.2f days", model.clock.time / day)
-    pp = plot(pu, pw, pT, pC, title=["u (m/s), t=$t @ x=0" "w (m/s)" "T (C)" "meltwater"], dpi=300, show=true)
-
-    i = Int(model.clock.iteration / Ni)
-    i_str = lpad(i, 5, "0")
-    savefig(pp, "cross_channel_frame_$i_str.png")
-
-    i = i+1
 
     # Calculate simulation progress in %.
     progress = 100 * (model.clock.time / end_time)
