@@ -74,13 +74,15 @@ end
 ##### Set up model
 #####
 
+eos = RoquetIdealizedNonlinearEquationOfState(:freezing)
+
 model = Model(
            architecture = arch,
              float_type = FT,
                    grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(-Lx/2, Lx/2), y=(0, Ly), z=(-Lz, 0)),
                 tracers = (:T, :S, :meltwater),
                coriolis = FPlane(rotation_rate=Ω_Earth, latitude=φ),
-               buoyancy = SeawaterBuoyancy(),
+               buoyancy = SeawaterBuoyancy(equation_of_state=eos),
                 closure = AnisotropicMinimumDissipation(),
     boundary_conditions = ChannelSolutionBCs(),
                 forcing = forcing,
