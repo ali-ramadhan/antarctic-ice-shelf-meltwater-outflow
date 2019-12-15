@@ -5,6 +5,8 @@ using Oceananigans
 using Oceananigans.Diagnostics
 using Oceananigans.OutputWriters
 
+using Oceananigans: RoquetIdealizedNonlinearEquationOfState
+
 #####
 ##### Some useful constants
 #####
@@ -223,11 +225,11 @@ model.output_writers[:along_channel_slice] =
         L : %.3g, %.3g, %.3g [km]
         Δ : %.3g, %.3g, %.3g [m]
         φ : %.3g [latitude]
-        f : %.3g [s⁻¹]
+        f : %.3e [s⁻¹]
      days : %d
    source : %s
- T_source : %.2g [°C]
- S_source : %.2g [g/kg]
+ T_source : %.2f [°C]
+ S_source : %.2f [g/kg]
   closure : %s
       EoS : %s
 
