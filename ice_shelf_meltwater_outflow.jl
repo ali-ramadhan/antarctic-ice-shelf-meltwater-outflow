@@ -195,7 +195,7 @@ model.output_writers[:depth_slice] =
                        interval = 5minute, output_attributes = output_attributes,
                        zC = source_index[3], zF = source_index[3])
 
-mode.output_writers[:surface_slice] =
+model.output_writers[:surface_slice] =
     NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_surface_xy_slice.nc",
                        interval = 5minute, output_attributes = output_attributes,
                        zC = Nz, zF = Nz)
@@ -232,7 +232,7 @@ model.output_writers[:along_channel_slice] =
 """, model.grid.Nx, model.grid.Ny, model.grid.Nz,
      model.grid.Lx / km, model.grid.Ly / km, model.grid.Lz / km,
      model.grid.Δx, model.grid.Δy, model.grid.Δz,
-     latitude, model.coriolis.f, end_time / day,
+     φ, model.coriolis.f, end_time / day,
      source_type, T_source, S_source,
      typeof(model.closure), typeof(model.buoyancy.equation_of_state))
 
@@ -284,4 +284,8 @@ while model.clock.time < end_time
     i, t = model.clock.iteration, model.clock.time
     @printf("[%06.2f%%] i: %d, t: %5.2f days, umax: (%6.3g, %6.3g, %6.3g) m/s, CFL: %6.4g, νκmax: (%6.3g, %6.3g), νκCFL: %6.4g, next Δt: %8.5g s, ⟨wall time⟩: %s\n",
             progress, i, t / day, umax, vmax, wmax, cfl(model), νmax, κmax, dcfl(model), wizard.Δt, prettytime(walltime / Ni))
+end
+
+for ow in model.output_writers
+	ow isa NetCDFOutputWriter && close(ow)
 end
