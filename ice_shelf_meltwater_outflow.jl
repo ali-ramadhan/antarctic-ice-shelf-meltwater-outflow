@@ -36,6 +36,9 @@ end_time = 7day
 ##### This is in effect weakly imposing a Value/Dirchlet boundary condition.
 #####
 
+const source_type = :point
+# const source_type = :line
+
 λ = 1/(1minute)  # Relaxation timescale [s⁻¹].
 
 # Temperature and salinity of the meltwater outflow.
@@ -61,8 +64,11 @@ source_index = (Int(Nx/2), 1, Int(Nz/2))
 
 params = (source_index=source_index, T_source=T_source, S_source=S_source, λ=λ)
 
-forcing = ModelForcing(T = T_point_source, S = S_point_source)
-# forcing = ModelForcing(T = T_line_source, S = S_line_source)
+if source_type == :point
+    forcing = ModelForcing(T = T_point_source, S = S_point_source)
+elseif source_type == :line
+    forcing = ModelForcing(T = T_line_source, S = S_line_source)
+end
 
 #####
 ##### Set up model
@@ -146,8 +152,11 @@ set!(model.tracers.T, T₀_3D)
 set!(model.tracers.S, S₀_3D)
 
 # Set meltwater concentration to 1 at the source.
-model.tracers.meltwater.data[source_index...] = 1  # Point source
-# model.tracers.meltwater.data[:, source_index[2], source_index[3]] .= 1  # Line source
+if source_type == :point
+    model.tracers.meltwater.data[source_index...] = 1
+elseif source_type == :line
+    model.tracers.meltwater.data[:, source_index[2], source_index[3]] .= 1  # Line source
+end
 
 #####
 ##### Write out 3D fields and slices to NetCDF files.
@@ -227,8 +236,11 @@ while model.clock.time < end_time
     walltime = @elapsed begin
         time_step!(model; Nt=Ni, Δt=wizard.Δt)
 
-        C_mw.data[source_index...] = 1  # Point source
-        # C_mw.data[:, source_index[2], source_index[3]] .= 1  # Line source
+        if source_type == :point
+            C_mw.data[source_index...] = 1
+        elseif source_type == :line
+            C_mw.data[:, source_index[2], source_index[3]] .= 1
+        end
     end
 
     # Calculate simulation progress in %.
