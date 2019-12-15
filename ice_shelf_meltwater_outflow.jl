@@ -214,6 +214,28 @@ model.output_writers[:along_channel_slice] =
 ##### Print banner
 #####
 
+@printf("""
+
+    Simulating ocean dynamics of meltwater outflow from beneath Antarctic ice shelves
+        N : %d, %d, %d
+        L : %.3g, %.3g, %.3g [km]
+        Δ : %.3g, %.3g, %.3g [m]
+        φ : %.3g [latitude]
+        f : %.3g [s⁻¹]
+     days : %d
+   source : %s
+ T_source : %.2g [°C]
+ S_source : %.2g [g/kg]
+  closure : %s
+      EoS : %s
+
+""", model.grid.Nx, model.grid.Ny, model.grid.Nz,
+     model.grid.Lx / km, model.grid.Ly / km, model.grid.Lz / km,
+     model.grid.Δx, model.grid.Δy, model.grid.Δz,
+     latitude, model.coriolis.f, end_time / day,
+     source_type, T_source, S_source,
+     typeof(model.closure), typeof(model.buoyancy.equation_of_state))
+
 #####
 ##### Time step!
 #####
