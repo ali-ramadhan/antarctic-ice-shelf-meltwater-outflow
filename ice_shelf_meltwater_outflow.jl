@@ -1,14 +1,9 @@
 using DelimitedFiles, Printf
 using Interpolations, Plots
+
 using Oceananigans
-
-using Oceananigans.Diagnostics: AdvectiveCFL, DiffusiveCFL
-using Oceananigans.OutputWriters: NetCDFOutputWriter
-
-# Workaround for plotting many frames.
-# See: https://github.com/JuliaPlots/Plots.jl/issues/1723
-import GR
-GR.inline("png")
+using Oceananigans.Diagnostics
+using Oceananigans.OutputWriters
 
 #####
 ##### Some useful constants
@@ -66,8 +61,8 @@ source_index = (Int(Nx/2), 1, Int(Nz/2))
 
 params = (source_index=source_index, T_source=T_source, S_source=S_source, λ=λ)
 
-# forcing = ModelForcing(T = T_point_source, S = S_point_source)
-forcing = ModelForcing(T = T_line_source, S = S_line_source)
+forcing = ModelForcing(T = T_point_source, S = S_point_source)
+# forcing = ModelForcing(T = T_line_source, S = S_line_source)
 
 #####
 ##### Set up model
@@ -128,15 +123,15 @@ S₀ = Si.(-zC)
 T_fpath = "temperature_profiles.png"
 S_fpath = "salinity_profiles.png"
 
-T_plot = plot(T_good, -z_T, label="Reference", xlabel="Temperature (C)", ylabel="Depth (m)", grid=false, dpi=300)
+T_plot = plot(T_good, -z_T, grid=false, dpi=300, label="Reference",
+              xlabel="Temperature (C)", ylabel="Depth (m)")
 plot!(T_plot, T₀, zC, label="Interpolation")
-
 @info "Saving temperature profiles to $T_fpath..."
 savefig(T_plot, T_fpath)
 
-S_plot = plot(S_good, -z_S, label="Reference", xlabel="Salinity (ppt)", ylabel="Depth (m)", grid=false, dpi=300)
+S_plot = plot(S_good, -z_S, grid=false, dpi=300, label="Reference",
+              xlabel="Salinity (ppt)", ylabel="Depth (m)", )
 plot!(S_plot, S₀, zC, label="Interpolation")
-
 @info "Saving temperature profiles to $S_fpath..."
 savefig(S_plot, S_fpath)
 
@@ -151,11 +146,11 @@ set!(model.tracers.T, T₀_3D)
 set!(model.tracers.S, S₀_3D)
 
 # Set meltwater concentration to 1 at the source.
-# model.tracers.meltwater.data[source_index...] = 1  # Point source
-model.tracers.meltwater.data[:, source_index[2], source_index[3]] .= 1  # Line source
+model.tracers.meltwater.data[source_index...] = 1  # Point source
+# model.tracers.meltwater.data[:, source_index[2], source_index[3]] .= 1  # Line source
 
 #####
-##### Write out 3D fields and slices to NetCDF
+##### Write out 3D fields and slices to NetCDF files.
 #####
 
 fields = Dict(
@@ -182,22 +177,29 @@ output_attributes = Dict(
    "kappaS" => Dict("longname" => "Nonlinear LES diffusivity for salinity", "units" => "m^2/s")
 )
 
+model.output_writers[:fields] =
+    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_fields.nc",
+                       interval = 6hour, output_attributes = output_attributes)
 
-ow = model.output_writers
-ow[:field_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_fields.nc",
-                                       interval=6hour, output_attributes=output_attributes)
+model.output_writers[:depth_slice] =
+    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_source_xy_slice.nc",
+                       interval = 5minute, output_attributes = output_attributes,
+                       zC = source_index[3], zF = source_index[3])
 
-ow[:depth_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_source_xy_slice.nc",
-                                             interval=5minute, output_attributes=output_attributes, zC=source_index[3], zF=source_index[3])
+mode.output_writers[:surface_slice] =
+    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_surface_xy_slice.nc",
+                       interval = 5minute, output_attributes = output_attributes,
+                       zC = Nz, zF = Nz)
 
-ow[:surface_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_surface_xy_slice.nc",
-                                               interval=5minute, output_attributes=output_attributes, zC=Nz, zF=Nz)
+model.output_writers[:calving_front_slice] =
+    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_calving_front_xz_slice.nc",
+                       interval = 5minute, output_attributes = output_attributes,
+                       yC = 1, yF = 2)
 
-ow[:calving_front_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_calving_front_xz_slice.nc",
-                                                     interval=5minute, output_attributes=output_attributes, yC=1, yF=2)
-
-ow[:along_channel_slice_writer] = NetCDFOutputWriter(model, fields; filename="ice_shelf_meltwater_outflow_along_channel_yz_slice.nc",
-                                                     interval=5minute, output_attributes=output_attributes, xC=source_index[1], xF=source_index[1])
+model.output_writers[:along_channel_slice] =
+    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_along_channel_yz_slice.nc",
+                       interval = 5minute, output_attributes = output_attributes,
+                       xC = source_index[1], xF = source_index[1])
 
 #####
 ##### Print banner
@@ -225,8 +227,8 @@ while model.clock.time < end_time
     walltime = @elapsed begin
         time_step!(model; Nt=Ni, Δt=wizard.Δt)
 
-        # C_mw.data[source_index...] = 1  # Point source
-        C_mw.data[:, source_index[2], source_index[3]] .= 1  # Line source
+        C_mw.data[source_index...] = 1  # Point source
+        # C_mw.data[:, source_index[2], source_index[3]] .= 1  # Line source
     end
 
     # Calculate simulation progress in %.
@@ -236,17 +238,16 @@ while model.clock.time < end_time
     umax = maximum(abs, model.velocities.u.data.parent)
     vmax = maximum(abs, model.velocities.v.data.parent)
     wmax = maximum(abs, model.velocities.w.data.parent)
-    CFL = cfl(model)
 
     # Find maximum ν and κ.
     νmax = maximum(model.diffusivities.νₑ.data.parent)
     κmax = maximum(model.diffusivities.κₑ.T.data.parent)
-    dCFL = dcfl(model)
 
     # Calculate a new adaptive time step.
     update_Δt!(wizard, model)
 
     # Print progress statement.
+    i, t = model.clock.iteration, model.clock.time
     @printf("[%06.2f%%] i: %d, t: %5.2f days, umax: (%6.3g, %6.3g, %6.3g) m/s, CFL: %6.4g, νκmax: (%6.3g, %6.3g), νκCFL: %6.4g, next Δt: %8.5g s, ⟨wall time⟩: %s\n",
-            progress, model.clock.iteration, model.clock.time / day, umax, vmax, wmax, CFL, νmax, κmax, dCFL, wizard.Δt, prettytime(walltime / Ni))
+            progress, i, t / day, umax, vmax, wmax, cfl(model), νmax, κmax, dcfl(model), wizard.Δt, prettytime(walltime / Ni))
 end
