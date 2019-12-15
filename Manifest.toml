@@ -274,8 +274,8 @@ version = "0.3.3"
 
 [[Oceananigans]]
 deps = ["Adapt", "CUDAapi", "CUDAdrv", "CUDAnative", "Cassette", "CuArrays", "Dates", "Distributed", "FFTW", "GPUifyLoops", "JLD2", "LinearAlgebra", "Logging", "NCDatasets", "OffsetArrays", "OrderedCollections", "Printf", "Random", "StaticArrays", "Statistics", "Test", "TimerOutputs"]
-git-tree-sha1 = "2937998350c1d8dcfb5751088717b9a7292f1726"
-repo-rev = "master"
+git-tree-sha1 = "779bb13d54042c3d56730687cc42b83c135cf3e0"
+repo-rev = "ar/fix-nonlinear-eos"
 repo-url = "https://github.com/climate-machine/Oceananigans.jl.git"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 version = "0.17.0"
