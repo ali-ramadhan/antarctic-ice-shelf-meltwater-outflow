@@ -76,7 +76,8 @@ end
 ##### Set up model
 #####
 
-eos = RoquetIdealizedNonlinearEquationOfState(:freezing)
+eos = LinearEquationOfState()
+# eos = RoquetIdealizedNonlinearEquationOfState(:freezing)
 
 model = Model(
            architecture = arch,
@@ -267,6 +268,10 @@ while model.clock.time < end_time
         elseif source_type == :line
             C_mw.data[:, source_index[2], source_index[3]] .= 1
         end
+
+        # Normalize meltwater concentration to be 0 <= C_mw <= 1.
+        C_mw.data .= max.(0, C_mw.data)
+        C_mw.data .= C_mw.data ./ maximum(C_mw.data)
     end
 
     # Calculate simulation progress in %.
