@@ -19,8 +19,11 @@ ds = xr.open_dataset("ice_shelf_meltwater_outflow_along_channel_yz_slice.nc")
 
 Nt = ds.Time.size
 
-for n in range(Nt):
-    fix, axes = plt.subplots(nrows=2, ncols=2, figsize=(16, 9), dpi=300)
+for n in range(0, Nt, 100):
+    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(16, 9), dpi=300)
+
+    t = ds.Time.values[n] / 86400
+    fig.suptitle(f"Point source, Linear EOS, t = {t:.2f} days", fontsize=16)
 
     u = ds.u.isel(Time=n).squeeze()
     u.plot.contourf(ax=axes[0, 0], vmin=-0.5, vmax=0.5, levels=21, cmap=cmocean.cm.balance, extend="both")
@@ -43,10 +46,10 @@ for n in range(Nt):
 
     plt.close("all")
 
-(
-    ffmpeg
-    .input("yz_slice_%05d.png", framerate=10)
-    .output("yz_slice.mp4", crf=15, pix_fmt='yuv420p')
-    .overwrite_output()
-    .run()
-)
+#  (
+#      ffmpeg
+#      .input("yz_slice_%05d.png", framerate=10)
+#      .output("yz_slice.mp4", crf=15, pix_fmt='yuv420p')
+#      .overwrite_output()
+#      .run()
+#  )
