@@ -4,8 +4,7 @@ using Interpolations, Plots
 using Oceananigans
 using Oceananigans.Diagnostics
 using Oceananigans.OutputWriters
-
-using Oceananigans: RoquetIdealizedNonlinearEquationOfState
+using Oceananigans.Utils
 
 #####
 ##### Some useful constants
@@ -76,8 +75,8 @@ end
 ##### Set up model
 #####
 
-eos = LinearEquationOfState()
-# eos = RoquetIdealizedNonlinearEquationOfState(:freezing)
+# eos = LinearEquationOfState()
+eos = RoquetIdealizedNonlinearEquationOfState(:freezing)
 
 model = Model(
            architecture = arch,
@@ -191,27 +190,31 @@ output_attributes = Dict(
    "kappaS" => Dict("longname" => "Nonlinear LES diffusivity for salinity", "units" => "m^2/s")
 )
 
+eos_name(::LinearEquationOfState) = "LinearEOS"
+eos_name(::RoquetIdealizedNonlinearEquationOfState) = "RoquetEOS"
+prefix = "ice_shelf_meltwater_outflow_$(source_type)_$(eos_name(eos))_"
+
 model.output_writers[:fields] =
-    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_fields.nc",
+    NetCDFOutputWriter(model, fields, filename = prefix * "fields.nc",
                        interval = 6hour, output_attributes = output_attributes)
 
 model.output_writers[:depth_slice] =
-    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_source_xy_slice.nc",
+    NetCDFOutputWriter(model, fields, filename = prefix * "middepth_xy_slice.nc",
                        interval = 5minute, output_attributes = output_attributes,
                        zC = source_index[3], zF = source_index[3])
 
 model.output_writers[:surface_slice] =
-    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_surface_xy_slice.nc",
+    NetCDFOutputWriter(model, fields, filename = prefix * "surface_xy_slice.nc",
                        interval = 5minute, output_attributes = output_attributes,
                        zC = Nz, zF = Nz)
 
 model.output_writers[:calving_front_slice] =
-    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_calving_front_xz_slice.nc",
+    NetCDFOutputWriter(model, fields, filename = prefix * "calving_front_xz_slice.nc",
                        interval = 5minute, output_attributes = output_attributes,
                        yC = 1, yF = 2)
 
 model.output_writers[:along_channel_slice] =
-    NetCDFOutputWriter(model, fields, filename = "ice_shelf_meltwater_outflow_along_channel_yz_slice.nc",
+    NetCDFOutputWriter(model, fields, filename = prefix * "along_channel_yz_slice.nc",
                        interval = 5minute, output_attributes = output_attributes,
                        xC = source_index[1], xF = source_index[1])
 
