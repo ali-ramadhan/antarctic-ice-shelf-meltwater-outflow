@@ -19,7 +19,7 @@ ds = xr.open_dataset("ice_shelf_meltwater_outflow_along_channel_yz_slice.nc")
 
 Nt = ds.Time.size
 
-for n in range(100):
+for n in range(Nt):
     fix, axes = plt.subplots(nrows=2, ncols=2, figsize=(16, 9), dpi=300)
 
     u = ds.u.isel(Time=n).squeeze()
