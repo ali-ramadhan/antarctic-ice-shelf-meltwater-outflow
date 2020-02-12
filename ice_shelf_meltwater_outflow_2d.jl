@@ -6,6 +6,8 @@ using Oceananigans.Diagnostics
 using Oceananigans.OutputWriters
 using Oceananigans.Utils
 
+# setting up a 2-d model in the style of NG17
+
 #####
 ##### Some useful constants
 #####
@@ -18,14 +20,14 @@ const φ = -75  # degrees latitude
 ##### Model grid and domain size
 #####
 
-arch = CPU()
+arch = GPU()
 FT = Float64
 
-Nx = 32
-Ny = 32
-Nz = 32
+Nx = 1 
+Ny = 128
+Nz = 128
 
-Lx = 10km
+Lx = 40
 Ly = 10km
 Lz = 1km
 
@@ -34,7 +36,7 @@ end_time = 7day
 #####
 ##### Set up source of meltwater: We will implement a source of meltwater as
 ##### a relaxation term towards a reference T and S value at a single point.
-##### This is in effect weakly imposing a Value/Dirchlet boundary condition.
+##### This is in effect weakly imposing a Value/Dirichlet boundary condition.
 #####
 
 const source_type = :point
@@ -47,7 +49,7 @@ T_source = -1
 S_source = 33.95
 
 # Index of the point source at the middle of the southern wall.
-source_index = (Int(Nx/2), 1, Int(Nz/2))
+source_index = (1, 1, Int(Nz/2))
 
 # Point source
 @inline T_point_source(i, j, k, grid, time, U, C, p) =
@@ -122,8 +124,8 @@ z_T = z[T_good_inds]
 z_S = z[S_good_inds]
 
 # Linearly interpolate T and S profiles to model grid.
-Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Flat())
-Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Flat())
+Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Interpolations.Flat())
+Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Interpolations.Flat())
 
 zC = model.grid.zC
 T₀ = Ti.(-zC)
@@ -192,26 +194,11 @@ output_attributes = Dict(
 
 eos_name(::LinearEquationOfState) = "LinearEOS"
 eos_name(::RoquetIdealizedNonlinearEquationOfState) = "RoquetEOS"
-prefix = "ice_shelf_meltwater_outflow_$(source_type)_$(eos_name(eos))_"
+prefix = "ice_shelf_meltwater_outflow_2d$(source_type)_$(eos_name(eos))_"
 
 model.output_writers[:fields] =
     NetCDFOutputWriter(model, fields, filename = prefix * "fields.nc",
                        interval = 6hour, output_attributes = output_attributes)
-
-model.output_writers[:depth_slice] =
-    NetCDFOutputWriter(model, fields, filename = prefix * "middepth_xy_slice.nc",
-                       interval = 5minute, output_attributes = output_attributes,
-                       zC = source_index[3], zF = source_index[3])
-
-model.output_writers[:surface_slice] =
-    NetCDFOutputWriter(model, fields, filename = prefix * "surface_xy_slice.nc",
-                       interval = 5minute, output_attributes = output_attributes,
-                       zC = Nz, zF = Nz)
-
-model.output_writers[:calving_front_slice] =
-    NetCDFOutputWriter(model, fields, filename = prefix * "calving_front_xz_slice.nc",
-                       interval = 5minute, output_attributes = output_attributes,
-                       yC = 1, yF = 2)
 
 model.output_writers[:along_channel_slice] =
     NetCDFOutputWriter(model, fields, filename = prefix * "along_channel_yz_slice.nc",
