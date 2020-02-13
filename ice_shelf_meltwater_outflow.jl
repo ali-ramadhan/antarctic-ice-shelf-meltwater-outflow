@@ -122,8 +122,8 @@ z_T = z[T_good_inds]
 z_S = z[S_good_inds]
 
 # Linearly interpolate T and S profiles to model grid.
-Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Flat())
-Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Flat())
+Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Interpolations.Flat())
+Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Interpolations.Flat())
 
 zC = model.grid.zC
 T₀ = Ti.(-zC)
