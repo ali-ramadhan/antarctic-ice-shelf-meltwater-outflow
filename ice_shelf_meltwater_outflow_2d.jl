@@ -20,78 +20,18 @@ const φ = -75  # degrees latitude
 ##### Model grid and domain size
 #####
 
-arch = GPU()
+arch = CPU()
 FT = Float64
 
-Nx = 1 
-Ny = 128
-Nz = 128
+Nx = 1
+Ny = 32 
+Nz = 32 
 
-Lx = 40
-Ly = 10km
-Lz = 1km
+Lx = 5km/32
+Ly = 5km
+Lz = 300 
 
 end_time = 7day
-
-#####
-##### Set up source of meltwater: We will implement a source of meltwater as
-##### a relaxation term towards a reference T and S value at a single point.
-##### This is in effect weakly imposing a Value/Dirichlet boundary condition.
-#####
-
-const source_type = :point
-# const source_type = :line
-
-λ = 1/(1minute)  # Relaxation timescale [s⁻¹].
-
-# Temperature and salinity of the meltwater outflow.
-T_source = -1
-S_source = 33.95
-
-# Index of the point source at the middle of the southern wall.
-source_index = (1, 1, Int(Nz/2))
-
-# Point source
-@inline T_point_source(i, j, k, grid, time, U, C, p) =
-    @inbounds ifelse((i, j, k) == p.source_index, -p.λ * (C.T[i, j, k] - p.T_source), 0)
-
-@inline S_point_source(i, j, k, grid, time, U, C, p) =
-    @inbounds ifelse((i, j, k) == p.source_index, -p.λ * (C.S[i, j, k] - p.S_source), 0)
-
-# Line source
-@inline T_line_source(i, j, k, grid, time, U, C, p) =
-    @inbounds ifelse((j, k) == (p.source_index[2], p.source_index[3]), -p.λ * (C.T[i, j, k] - p.T_source), 0)
-
-@inline S_line_source(i, j, k, grid, time, U, C, p) =
-    @inbounds ifelse((j, k) == (p.source_index[2], p.source_index[3]), -p.λ * (C.S[i, j, k] - p.S_source), 0)
-
-params = (source_index=source_index, T_source=T_source, S_source=S_source, λ=λ)
-
-if source_type == :point
-    forcing = ModelForcing(T = T_point_source, S = S_point_source)
-elseif source_type == :line
-    forcing = ModelForcing(T = T_line_source, S = S_line_source)
-end
-
-#####
-##### Set up model
-#####
-
-# eos = LinearEquationOfState()
-eos = RoquetIdealizedNonlinearEquationOfState(:freezing)
-
-model = Model(
-           architecture = arch,
-             float_type = FT,
-                   grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(-Lx/2, Lx/2), y=(0, Ly), z=(-Lz, 0)),
-                tracers = (:T, :S, :meltwater),
-               coriolis = FPlane(rotation_rate=Ω_Earth, latitude=φ),
-               buoyancy = SeawaterBuoyancy(equation_of_state=eos),
-                closure = AnisotropicMinimumDissipation(),
-    boundary_conditions = ChannelSolutionBCs(),
-                forcing = forcing,
-             parameters = params
-)
 
 #####
 ##### Read reference profiles from disk
@@ -127,7 +67,7 @@ z_S = z[S_good_inds]
 Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Interpolations.Flat())
 Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Interpolations.Flat())
 
-zC = model.grid.zC
+zC = ((-Lz:Lz/Nz:0).+Lz/(2*Nz))[1:end-1]
 T₀ = Ti.(-zC)
 S₀ = Si.(-zC)
 
@@ -148,6 +88,60 @@ plot!(S_plot, S₀, zC, label="Interpolation")
 savefig(S_plot, S_fpath)
 
 #####
+##### Set up relaxation areas for the meltwater source and for the northern boundary 
+#####
+
+# Meltwater source location - implemented as a box
+source_corners_m = ((1,1,1),(1,100,1))
+N = (Nx,Ny,Nz)
+L = (Lx,Ly,Lz)
+source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corners_m[2].*N./L)))
+
+λ = 1/(1minute)  # Relaxation timescale [s⁻¹].
+
+# Temperature and salinity of the meltwater outflow.
+T_source = -1
+S_source = 33.95
+
+# Specify width of stable relaxation area
+stable_relaxation_width_m = 200 
+stable_relaxation_width = Int(ceil(stable_relaxation_width_m.*Ny./Ly))
+
+# Forcing functions 
+@inline T_relax(i, j, k, grid, time, U, C, p) =
+	@inbounds ifelse((p.source_corners[1][1]<=i<=p.source_corners[2][1])*(p.source_corners[1][2]<=j<=p.source_corners[2][2])*(p.source_corners[1][3]<=k<=p.source_corners[2][3]), -p.λ * (C.T[i, j, k] - p.T_source), 0) +
+	@inbounds ifelse(j>Ny-p.stable_relaxation_width,-p.λ * C.T[i, j, k] - p.T₀[k],0)
+
+@inline S_relax(i, j, k, grid, time, U, C, p) =
+	@inbounds ifelse((p.source_corners[1][1]<=i<=p.source_corners[2][1])*(p.source_corners[1][2]<=j<=p.source_corners[2][2])*(p.source_corners[1][3]<=k<=p.source_corners[2][3]), -p.λ * (C.S[i, j, k] - p.S_source), 0) + 
+    	@inbounds ifelse(j>Ny-p.stable_relaxation_width,-p.λ * C.S[i, j, k] - p.S₀[k],0)
+
+params = (source_corners=source_corners, T_source=T_source, S_source=S_source, λ=λ, stable_relaxation_width=stable_relaxation_width, T₀=T₀,S₀=S₀)
+
+forcing = ModelForcing(T = T_relax, S = S_relax)
+
+#####
+##### Set up model
+#####
+
+# eos = LinearEquationOfState()
+eos = RoquetIdealizedNonlinearEquationOfState(:freezing)
+
+model = Model(
+           architecture = arch,
+             float_type = FT,
+                   grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(-Lx/2, Lx/2), y=(0, Ly), z=(-Lz, 0)),
+                tracers = (:T, :S, :meltwater),
+               coriolis = FPlane(rotation_rate=Ω_Earth, latitude=φ),
+               buoyancy = SeawaterBuoyancy(equation_of_state=eos),
+                closure = AnisotropicMinimumDissipation(),
+    boundary_conditions = ChannelSolutionBCs(),
+                forcing = forcing,
+             parameters = params
+)
+
+
+#####
 ##### Setting up initial conditions
 #####
 
@@ -158,11 +152,7 @@ set!(model.tracers.T, T₀_3D)
 set!(model.tracers.S, S₀_3D)
 
 # Set meltwater concentration to 1 at the source.
-if source_type == :point
-    model.tracers.meltwater.data[source_index...] = 1
-elseif source_type == :line
-    model.tracers.meltwater.data[:, source_index[2], source_index[3]] .= 1  # Line source
-end
+model.tracers.meltwater.data[source_corners[1][1]:source_corners[2][1],source_corners[1][2]:source_corners[2][2],source_corners[1][3]:source_corners[2][3]] .= 1  
 
 #####
 ##### Write out 3D fields and slices to NetCDF files.
@@ -194,7 +184,7 @@ output_attributes = Dict(
 
 eos_name(::LinearEquationOfState) = "LinearEOS"
 eos_name(::RoquetIdealizedNonlinearEquationOfState) = "RoquetEOS"
-prefix = "ice_shelf_meltwater_outflow_2d$(source_type)_$(eos_name(eos))_"
+prefix = "ice_shelf_meltwater_outflow_2d_$(eos_name(eos))_"
 
 model.output_writers[:fields] =
     NetCDFOutputWriter(model, fields, filename = prefix * "fields.nc",
@@ -203,7 +193,7 @@ model.output_writers[:fields] =
 model.output_writers[:along_channel_slice] =
     NetCDFOutputWriter(model, fields, filename = prefix * "along_channel_yz_slice.nc",
                        interval = 5minute, output_attributes = output_attributes,
-                       xC = source_index[1], xF = source_index[1])
+                       xC = 1, xF = 1)
 
 #####
 ##### Print banner
@@ -218,7 +208,6 @@ model.output_writers[:along_channel_slice] =
         φ : %.3g [latitude]
         f : %.3e [s⁻¹]
      days : %d
-   source : %s
  T_source : %.2f [°C]
  S_source : %.2f [g/kg]
   closure : %s
@@ -228,7 +217,7 @@ model.output_writers[:along_channel_slice] =
      model.grid.Lx / km, model.grid.Ly / km, model.grid.Lz / km,
      model.grid.Δx, model.grid.Δy, model.grid.Δz,
      φ, model.coriolis.f, end_time / day,
-     source_type, T_source, S_source,
+     T_source, S_source,
      typeof(model.closure), typeof(model.buoyancy.equation_of_state))
 
 #####
@@ -244,20 +233,16 @@ dcfl = DiffusiveCFL(wizard)
 
 # Number of time steps to perform at a time before printing a progress
 # statement and updating the adaptive time step.
-Ni = 50
+Ni = 20
 
-# Convinient alias
+# Convenient alias
 C_mw = model.tracers.meltwater
 
 while model.clock.time < end_time
     walltime = @elapsed begin
         time_step!(model; Nt=Ni, Δt=wizard.Δt)
 
-        if source_type == :point
-            C_mw.data[source_index...] = 1
-        elseif source_type == :line
-            C_mw.data[:, source_index[2], source_index[3]] .= 1
-        end
+        C_mw.data[source_corners[1][1]:source_corners[2][1],source_corners[1][2]:source_corners[2][2],source_corners[1][3]:source_corners[2][3]] .= 1
 
         # Normalize meltwater concentration to be 0 <= C_mw <= 1.
         C_mw.data .= max.(0, C_mw.data)
