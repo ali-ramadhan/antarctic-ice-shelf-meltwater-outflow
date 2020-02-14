@@ -24,8 +24,8 @@ arch = CPU()
 FT = Float64
 
 Nx = 1
-Ny = 128 
-Nz = 128 
+Ny = 32 
+Nz = 32 
 
 Lx = 5km/32
 Ly = 5km
@@ -48,14 +48,14 @@ N = (Nx,Ny,Nz)
 L = (Lx,Ly,Lz)
 source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corners_m[2].*N./L)))
 
-λ = 1/(1minute)  # Relaxation timescale [s⁻¹].
+λ = 1/(60)  # Relaxation timescale [s⁻¹].
 
 # Temperature and salinity of the meltwater outflow.
-T_source = 3 
+T_source = 2 
 S_source = 34
 
 # Specify width of stable relaxation area
-stable_relaxation_width_m = 200 
+stable_relaxation_width_m = 400 
 stable_relaxation_width = Int(ceil(stable_relaxation_width_m.*Ny./Ly))
 
 # Forcing functions 
@@ -193,7 +193,9 @@ while model.clock.time < end_time
     walltime = @elapsed begin
         time_step!(model; Nt=Ni, Δt=wizard.Δt)
 
+	# add passive meltwater tracer at source, remove at boundary
         C_mw.data[source_corners[1][1]:source_corners[2][1],source_corners[1][2]:source_corners[2][2],source_corners[1][3]:source_corners[2][3]] .= 1
+	C_mw.data[:,Ny-stable_relaxation_width:Ny,:] .= 0
 
         # Normalize meltwater concentration to be 0 <= C_mw <= 1.
         C_mw.data .= max.(0, C_mw.data)
