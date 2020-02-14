@@ -24,8 +24,8 @@ arch = CPU()
 FT = Float64
 
 Nx = 1
-Ny = 32 
-Nz = 32 
+Ny = 128 
+Nz = 128 
 
 Lx = 5km/32
 Ly = 5km
@@ -33,59 +33,10 @@ Lz = 300
 
 end_time = 7day
 
-#####
-##### Read reference profiles from disk
-##### As these profiles are derived from observations, we will have to do some
-##### post-processing to be able to use them as initial conditions.
-#####
-##### We will get rid of all NaN values and use the remaining data to linearly
-##### interpolate the T and S profiles to the model's grid.
-#####
-
-# The pressure is given in dbar so we will convert to depth (meters) assuming
-# 1 dbar = 1 meter (this is approximately true).
-z = readdlm("reference_pressure.txt")[:]
-
-# We also flatten the arrays by indexing with a Colon [:] to convert the arrays
-# from N×1 arrays to 1D arrays of length N.
-T = readdlm("reference_temperature.txt")[:]
-S = readdlm("reference_salinity.txt")[:]
-
-# Get the indices of all the non-NaN values.
-T_good_inds = findall(!isnan, T)
-S_good_inds = findall(!isnan, S)
-
-# Create T and S arrays that do not contain NaNs, along with corresponding
-# z values.
-T_good = T[T_good_inds]
-S_good = S[S_good_inds]
-
-z_T = z[T_good_inds]
-z_S = z[S_good_inds]
-
-# Linearly interpolate T and S profiles to model grid.
-Ti = LinearInterpolation(z_T, T_good, extrapolation_bc=Interpolations.Flat())
-Si = LinearInterpolation(z_S, S_good, extrapolation_bc=Interpolations.Flat())
-
-zC = ((-Lz:Lz/Nz:0).+Lz/(2*Nz))[1:end-1]
-T₀ = Ti.(-zC)
-S₀ = Si.(-zC)
-
-# Plot and save figures of reference and interpolated profiles.
-T_fpath = "temperature_profiles.png"
-S_fpath = "salinity_profiles.png"
-
-T_plot = plot(T_good, -z_T, grid=false, dpi=300, label="Reference",
-              xlabel="Temperature (C)", ylabel="Depth (m)")
-plot!(T_plot, T₀, zC, label="Interpolation")
-@info "Saving temperature profiles to $T_fpath..."
-savefig(T_plot, T_fpath)
-
-S_plot = plot(S_good, -z_S, grid=false, dpi=300, label="Reference",
-              xlabel="Salinity (ppt)", ylabel="Depth (m)", )
-plot!(S_plot, S₀, zC, label="Interpolation")
-@info "Saving temperature profiles to $S_fpath..."
-savefig(S_plot, S_fpath)
+# Make up temperature profiles
+zC = collect(((-Lz:Lz/Nz:0).+Lz/(2*Nz))[1:end-1])
+T₀ = collect(1:2/(Nz-1):3)
+S₀ = 34*ones(Nz) 
 
 #####
 ##### Set up relaxation areas for the meltwater source and for the northern boundary 
@@ -100,8 +51,8 @@ source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corne
 λ = 1/(1minute)  # Relaxation timescale [s⁻¹].
 
 # Temperature and salinity of the meltwater outflow.
-T_source = -1
-S_source = 33.95
+T_source = 3 
+S_source = 34
 
 # Specify width of stable relaxation area
 stable_relaxation_width_m = 200 
@@ -109,12 +60,12 @@ stable_relaxation_width = Int(ceil(stable_relaxation_width_m.*Ny./Ly))
 
 # Forcing functions 
 @inline T_relax(i, j, k, grid, time, U, C, p) =
-	@inbounds ifelse((p.source_corners[1][1]<=i<=p.source_corners[2][1])*(p.source_corners[1][2]<=j<=p.source_corners[2][2])*(p.source_corners[1][3]<=k<=p.source_corners[2][3]), -p.λ * (C.T[i, j, k] - p.T_source), 0) +
-	@inbounds ifelse(j>Ny-p.stable_relaxation_width,-p.λ * C.T[i, j, k] - p.T₀[k],0)
+@inbounds ifelse((p.source_corners[1][1]<=i<=p.source_corners[2][1])*(p.source_corners[1][2]<=j<=p.source_corners[2][2])*(p.source_corners[1][3]<=k<=p.source_corners[2][3]),(-p.λ * (C.T[i, j, k] - p.T_source)), 0) +
+@inbounds ifelse(j>Ny-p.stable_relaxation_width,-p.λ * (C.T[i, j, k] - T₀[k]),0)
 
 @inline S_relax(i, j, k, grid, time, U, C, p) =
-	@inbounds ifelse((p.source_corners[1][1]<=i<=p.source_corners[2][1])*(p.source_corners[1][2]<=j<=p.source_corners[2][2])*(p.source_corners[1][3]<=k<=p.source_corners[2][3]), -p.λ * (C.S[i, j, k] - p.S_source), 0) + 
-    	@inbounds ifelse(j>Ny-p.stable_relaxation_width,-p.λ * C.S[i, j, k] - p.S₀[k],0)
+@inbounds ifelse((p.source_corners[1][1]<=i<=p.source_corners[2][1])*(p.source_corners[1][2]<=j<=p.source_corners[2][2])*(p.source_corners[1][3]<=k<=p.source_corners[2][3]), (-p.λ * (C.S[i, j, k] - p.S_source)), 0) + 
+@inbounds ifelse(j>Ny-p.stable_relaxation_width,-p.λ * (C.S[i, j, k] - p.S₀[k]),0)
 
 params = (source_corners=source_corners, T_source=T_source, S_source=S_source, λ=λ, stable_relaxation_width=stable_relaxation_width, T₀=T₀,S₀=S₀)
 
