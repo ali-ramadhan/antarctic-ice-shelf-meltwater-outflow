@@ -20,14 +20,14 @@ const φ = -75  # degrees latitude
 ##### Model grid and domain size
 #####
 
-arch = CPU()
+arch = GPU()
 FT = Float64
 
 Nx = 1
-Ny = 32 
-Nz = 32 
+Ny = 256 
+Nz = 64 
 
-Lx = 5km/32
+Lx = 5km/Ny
 Ly = 5km
 Lz = 300 
 
@@ -43,7 +43,7 @@ S₀ = 34*ones(Nz)
 #####
 
 # Meltwater source location - implemented as a box
-source_corners_m = ((1,1,1),(1,100,1))
+source_corners_m = ((1,1,1),(Lx,50,10))
 N = (Nx,Ny,Nz)
 L = (Lx,Ly,Lz)
 source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corners_m[2].*N./L)))
@@ -51,7 +51,7 @@ source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corne
 λ = 1/(60)  # Relaxation timescale [s⁻¹].
 
 # Temperature and salinity of the meltwater outflow.
-T_source = 2 
+T_source = 3 
 S_source = 34
 
 # Specify width of stable relaxation area
@@ -176,7 +176,7 @@ model.output_writers[:along_channel_slice] =
 #####
 
 # Wizard utility that calculates safe adaptive time steps.
-wizard = TimeStepWizard(cfl=0.3, Δt=1second, max_change=1.2, max_Δt=30second)
+wizard = TimeStepWizard(cfl=0.2, Δt=1second, max_change=1.2, max_Δt=10second)
 
 # CFL utilities for reporting stability criterions.
 cfl = AdvectiveCFL(wizard)
@@ -197,9 +197,9 @@ while model.clock.time < end_time
         C_mw.data[source_corners[1][1]:source_corners[2][1],source_corners[1][2]:source_corners[2][2],source_corners[1][3]:source_corners[2][3]] .= 1
 	C_mw.data[:,Ny-stable_relaxation_width:Ny,:] .= 0
 
-        # Normalize meltwater concentration to be 0 <= C_mw <= 1.
-        C_mw.data .= max.(0, C_mw.data)
-        C_mw.data .= C_mw.data ./ maximum(C_mw.data)
+        ## Normalize meltwater concentration to be 0 <= C_mw <= 1.
+        #C_mw.data .= max.(0, C_mw.data)
+        #C_mw.data .= C_mw.data ./ maximum(C_mw.data)
     end
 
     # Calculate simulation progress in %.
