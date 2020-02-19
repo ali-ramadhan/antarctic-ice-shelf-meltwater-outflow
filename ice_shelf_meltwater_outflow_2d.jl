@@ -1,5 +1,5 @@
 using DelimitedFiles, Printf
-using Interpolations, Plots
+using Plots
 using CuArrays
 
 using Oceananigans
@@ -21,7 +21,7 @@ const φ = -75  # degrees latitude
 ##### Model grid and domain size
 #####
 
-arch = GPU()
+arch = CPU()
 FT = Float64
 
 Nx = 1
@@ -79,25 +79,27 @@ params = (source_corners=source_corners, T_source=T_source, S_source=S_source, �
 forcing = ModelForcing(T = T_relax, S = S_relax)
 
 #####
-##### Set up model
+##### Set up model and simulation
 #####
+
+topology = (Periodic, Bounded, Bounded)
+grid = RegularCartesianGrid(topology=topology, size=(Nx, Ny, Nz), x=(-Lx/2, Lx/2), y=(0, Ly), z=(-Lz, 0))
 
 # eos = LinearEquationOfState()
 eos = RoquetIdealizedNonlinearEquationOfState(:freezing)
 
-model = Model(
+model = IncompressibleModel(
            architecture = arch,
              float_type = FT,
-                   grid = RegularCartesianGrid(size=(Nx, Ny, Nz), x=(-Lx/2, Lx/2), y=(0, Ly), z=(-Lz, 0)),
+                   grid = grid,
                 tracers = (:T, :S, :meltwater),
                coriolis = FPlane(rotation_rate=Ω_Earth, latitude=φ),
                buoyancy = SeawaterBuoyancy(equation_of_state=eos),
                 closure = AnisotropicMinimumDissipation(),
-    boundary_conditions = ChannelSolutionBCs(),
+    boundary_conditions = SolutionBoundaryConditions(grid),
                 forcing = forcing,
              parameters = params
 )
-
 
 #####
 ##### Setting up initial conditions
@@ -144,15 +146,6 @@ eos_name(::LinearEquationOfState) = "LinearEOS"
 eos_name(::RoquetIdealizedNonlinearEquationOfState) = "RoquetEOS"
 prefix = "ice_shelf_meltwater_outflow_2d_$(eos_name(eos))_"
 
-model.output_writers[:fields] =
-    NetCDFOutputWriter(model, fields, filename = prefix * "fields.nc",
-                       interval = 6hour, output_attributes = output_attributes)
-
-model.output_writers[:along_channel_slice] =
-    NetCDFOutputWriter(model, fields, filename = prefix * "along_channel_yz_slice.nc",
-                       interval = 5minute, output_attributes = output_attributes,
-                       xC = 1, xF = 1)
-
 #####
 ##### Print banner
 #####
@@ -185,30 +178,26 @@ model.output_writers[:along_channel_slice] =
 # Wizard utility that calculates safe adaptive time steps.
 wizard = TimeStepWizard(cfl=0.2, Δt=1second, max_change=1.2, max_Δt=10second)
 
-# CFL utilities for reporting stability criterions.
-cfl = AdvectiveCFL(wizard)
-dcfl = DiffusiveCFL(wizard)
-
 # Number of time steps to perform at a time before printing a progress
 # statement and updating the adaptive time step.
 Ni = 20
 
-# Convenient alias
-C_mw = model.tracers.meltwater
+# CFL utilities for reporting stability criterions.
+cfl = AdvectiveCFL(wizard)
+dcfl = DiffusiveCFL(wizard)
 
-while model.clock.time < end_time
-    walltime = @elapsed begin
-        time_step!(model; Nt=Ni, Δt=wizard.Δt)
+function progress_statement(simulation)
+    model = simulation.model
+    C_mw = model.tracers.meltwater  # Convinient alias
+    
+    # add passive meltwater tracer at source, remove at boundary
+    C_mw.data[source_corners[1][1]:source_corners[2][1],source_corners[1][2]:source_corners[2][2],source_corners[1][3]:source_corners[2][3]] .= 1
+    C_mw.data[:,Ny-stable_relaxation_width:Ny,:] .= 0
 
-	# add passive meltwater tracer at source, remove at boundary
-        C_mw.data[source_corners[1][1]:source_corners[2][1],source_corners[1][2]:source_corners[2][2],source_corners[1][3]:source_corners[2][3]] .= 1
-	C_mw.data[:,Ny-stable_relaxation_width:Ny,:] .= 0
-
-        ## Normalize meltwater concentration to be 0 <= C_mw <= 1.
-        #C_mw.data .= max.(0, C_mw.data)
-        #C_mw.data .= C_mw.data ./ maximum(C_mw.data)
-    end
-
+    ## Normalize meltwater concentration to be 0 <= C_mw <= 1.
+    #C_mw.data .= max.(0, C_mw.data)
+    #C_m w.data .= C_mw.data ./ maximum(C_mw.data)
+    
     # Calculate simulation progress in %.
     progress = 100 * (model.clock.time / end_time)
 
@@ -221,15 +210,26 @@ while model.clock.time < end_time
     νmax = maximum(model.diffusivities.νₑ.data.parent)
     κmax = maximum(model.diffusivities.κₑ.T.data.parent)
 
-    # Calculate a new adaptive time step.
-    update_Δt!(wizard, model)
-
     # Print progress statement.
     i, t = model.clock.iteration, model.clock.time
-    @printf("[%06.2f%%] i: %d, t: %5.2f days, umax: (%6.3g, %6.3g, %6.3g) m/s, CFL: %6.4g, νκmax: (%6.3g, %6.3g), νκCFL: %6.4g, next Δt: %8.5g s, ⟨wall time⟩: %s\n",
-            progress, i, t / day, umax, vmax, wmax, cfl(model), νmax, κmax, dcfl(model), wizard.Δt, prettytime(walltime / Ni))
+    @printf("[%06.2f%%] i: %d, t: %5.2f days, umax: (%6.3g, %6.3g, %6.3g) m/s, CFL: %6.4g, νκmax: (%6.3g, %6.3g), νκCFL: %6.4g, next Δt: %8.5g s\n",
+            progress, i, t / day, umax, vmax, wmax, cfl(model), νmax, κmax, dcfl(model), wizard.Δt)
 end
 
+# Simulation that manages time stepping.
+simulation = Simulation(model, Δt=wizard, stop_time=end_time, progress=progress_statement, progress_frequency=Ni)
+
+simulation.output_writers[:fields] =
+    NetCDFOutputWriter(model, fields, filename = prefix * "fields.nc",
+                       interval = 6hour, output_attributes = output_attributes)
+
+simulation.output_writers[:along_channel_slice] =
+    NetCDFOutputWriter(model, fields, filename = prefix * "along_channel_yz_slice.nc",
+                       interval = 5minute, output_attributes = output_attributes,
+                       xC = 1, xF = 1)
+
+run!(simulation)
+
 for ow in model.output_writers
-	ow isa NetCDFOutputWriter && close(ow)
+    ow isa NetCDFOutputWriter && close(ow)
 end
