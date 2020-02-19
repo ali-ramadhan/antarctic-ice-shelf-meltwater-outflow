@@ -1,5 +1,6 @@
 using DelimitedFiles, Printf
 using Interpolations, Plots
+using CuArrays
 
 using Oceananigans
 using Oceananigans.Diagnostics
@@ -37,6 +38,12 @@ end_time = 7day
 zC = collect(((-Lz:Lz/Nz:0).+Lz/(2*Nz))[1:end-1])
 T₀ = collect(1:2/(Nz-1):3)
 S₀ = 34*ones(Nz) 
+
+# convert to CuArray if we are running on a GPU
+#if arch==GPU()
+T₀ = CuArray(T₀)
+S₀ = CuArray(S₀)
+#end
 
 #####
 ##### Set up relaxation areas for the meltwater source and for the northern boundary 
