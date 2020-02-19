@@ -21,7 +21,7 @@ const φ = -75  # degrees latitude
 ##### Model grid and domain size
 #####
 
-arch = CPU()
+arch = GPU()
 FT = Float64
 
 Nx = 1
@@ -40,10 +40,10 @@ T₀ = collect(1:2/(Nz-1):3)
 S₀ = 34*ones(Nz) 
 
 # convert to CuArray if we are running on a GPU
-#if arch==GPU()
-T₀ = CuArray(T₀)
-S₀ = CuArray(S₀)
-#end
+if arch == GPU()
+    T₀ = CuArray(T₀)
+    S₀ = CuArray(S₀)
+end
 
 #####
 ##### Set up relaxation areas for the meltwater source and for the northern boundary 
@@ -58,21 +58,21 @@ source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corne
 λ = 1/(60)  # Relaxation timescale [s⁻¹].
 
 # Temperature and salinity of the meltwater outflow.
-T_source = 3 
-S_source = 34
+T_source = 3.0
+S_source = 34.0
 
 # Specify width of stable relaxation area
-stable_relaxation_width_m = 400 
+stable_relaxation_width_m = 400.0 
 stable_relaxation_width = Int(ceil(stable_relaxation_width_m.*Ny./Ly))
 
 # Forcing functions 
 @inline T_relax(i, j, k, grid, time, U, C, p) =
-@inbounds ifelse((p.source_corners[1][1]<=i<=p.source_corners[2][1])*(p.source_corners[1][2]<=j<=p.source_corners[2][2])*(p.source_corners[1][3]<=k<=p.source_corners[2][3]),(-p.λ * (C.T[i, j, k] - p.T_source)), 0) +
-@inbounds ifelse(j>Ny-p.stable_relaxation_width,-p.λ * (C.T[i, j, k] - T₀[k]),0)
+    @inbounds ifelse(p.source_corners[1][1]<=i<=p.source_corners[2][1] && p.source_corners[1][2]<=j<=p.source_corners[2][2] && p.source_corners[1][3]<=k<=p.source_corners[2][3], -p.λ * (C.T[i, j, k] - p.T_source), 0) +
+              ifelse(j>grid.Ny-p.stable_relaxation_width, -p.λ * (C.T[i, j, k] - p.T₀[k]), 0)
 
 @inline S_relax(i, j, k, grid, time, U, C, p) =
-@inbounds ifelse((p.source_corners[1][1]<=i<=p.source_corners[2][1])*(p.source_corners[1][2]<=j<=p.source_corners[2][2])*(p.source_corners[1][3]<=k<=p.source_corners[2][3]), (-p.λ * (C.S[i, j, k] - p.S_source)), 0) + 
-@inbounds ifelse(j>Ny-p.stable_relaxation_width,-p.λ * (C.S[i, j, k] - p.S₀[k]),0)
+    @inbounds ifelse(p.source_corners[1][1]<=i<=p.source_corners[2][1] && p.source_corners[1][2]<=j<=p.source_corners[2][2] && p.source_corners[1][3]<=k<=p.source_corners[2][3], -p.λ * (C.S[i, j, k] - p.S_source), 0) + 
+              ifelse(j>grid.Ny-p.stable_relaxation_width, -p.λ * (C.S[i, j, k] - p.S₀[k]), 0)
 
 params = (source_corners=source_corners, T_source=T_source, S_source=S_source, λ=λ, stable_relaxation_width=stable_relaxation_width, T₀=T₀,S₀=S₀)
 
