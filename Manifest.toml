@@ -287,11 +287,11 @@ version = "0.3.3"
 
 [[Oceananigans]]
 deps = ["Adapt", "CUDAapi", "CUDAdrv", "CUDAnative", "CuArrays", "Dates", "FFTW", "GPUifyLoops", "JLD2", "LinearAlgebra", "Logging", "NCDatasets", "OffsetArrays", "OrderedCollections", "Printf", "Random", "Statistics", "Test"]
-git-tree-sha1 = "7453bc80551e1b92de5576cf816371f3f7c9e2db"
-repo-rev = "ar/2d-gpu-models"
+git-tree-sha1 = "059808854224b773abaefbd08afe1bd930e9a2f5"
+repo-rev = "ar/fix-set-cuarray"
 repo-url = "https://github.com/climate-machine/Oceananigans.jl.git"
 uuid = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
-version = "0.21.0"
+version = "0.22.0"
 
 [[OffsetArrays]]
 git-tree-sha1 = "1ae707306f6e33dbb37d0742e08828562772b73f"
