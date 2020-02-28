@@ -5,7 +5,10 @@ using CuArrays
 using Oceananigans
 using Oceananigans.Diagnostics
 using Oceananigans.OutputWriters
+using Oceananigans.AbstractOperations
 using Oceananigans.Utils
+
+using Oceananigans: Face, Cell
 
 # setting up a 2-d model in the style of NG17
 
@@ -21,12 +24,12 @@ const φ = -75  # degrees latitude
 ##### Model grid and domain size
 #####
 
-arch = GPU()
+arch = CPU()
 FT = Float64
 
 Nx = 1
-Ny = 256 
-Nz = 64 
+Ny = 32 
+Nz = 32 
 
 Lx = 5km/Ny
 Ly = 5km
@@ -58,7 +61,7 @@ source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corne
 λ = 1/(60)  # Relaxation timescale [s⁻¹].
 
 # Temperature and salinity of the meltwater outflow.
-T_source = 3.0
+T_source = 2.0
 S_source = 34.0
 
 # Specify width of stable relaxation area
@@ -96,7 +99,6 @@ model = IncompressibleModel(
                coriolis = FPlane(rotation_rate=Ω_Earth, latitude=φ),
                buoyancy = SeawaterBuoyancy(equation_of_state=eos),
                 closure = AnisotropicMinimumDissipation(),
-    boundary_conditions = SolutionBoundaryConditions(grid),
                 forcing = forcing,
              parameters = params
 )
@@ -118,6 +120,17 @@ model.tracers.meltwater.data[source_corners[1][1]:source_corners[2][1],source_co
 ##### Write out 3D fields and slices to NetCDF files.
 #####
 
+# Define vorticity computation
+u, v, w = model.velocities
+vorticity_operation = ∂x(v) - ∂y(u)
+ω = Field(Face, Face, Cell, model.architecture, model.grid, TracerBoundaryConditions(grid))
+vorticity_computation = Computation(vorticity_operation, ω)
+
+function get_vorticity(model)
+    compute!(vorticity_computation)
+    return Array(interior(ω))
+end
+
 fields = Dict(
         "u" => model.velocities.u,
         "v" => model.velocities.v,
@@ -127,19 +140,20 @@ fields = Dict(
 "meltwater" => model.tracers.meltwater,
        "nu" => model.diffusivities.νₑ,
    "kappaT" => model.diffusivities.κₑ.T,
-   "kappaS" => model.diffusivities.κₑ.S
+   "kappaS" => model.diffusivities.κₑ.S,
+   "vorticity" => get_vorticity
+)
+
+dimensions = Dict(
+    "vorticity" => ("xF", "yF", "zC")
 )
 
 output_attributes = Dict(
-        "u" => Dict("longname" => "Velocity in the x-direction", "units" => "m/s"),
-        "v" => Dict("longname" => "Velocity in the y-direction", "units" => "m/s"),
-        "w" => Dict("longname" => "Velocity in the z-direction", "units" => "m/s"),
-        "T" => Dict("longname" => "Temperature", "units" => "C"),
-        "S" => Dict("longname" => "Salinity", "units" => "g/kg"),
 "meltwater" => Dict("longname" => "Meltwater concentration"),
        "nu" => Dict("longname" => "Nonlinear LES viscosity", "units" => "m^2/s"),
    "kappaT" => Dict("longname" => "Nonlinear LES diffusivity for temperature", "units" => "m^2/s"),
-   "kappaS" => Dict("longname" => "Nonlinear LES diffusivity for salinity", "units" => "m^2/s")
+   "kappaS" => Dict("longname" => "Nonlinear LES diffusivity for salinity", "units" => "m^2/s"),
+   "vorticity" => Dict("longname" => "Vorticity", "units" => "1/s")
 )
 
 eos_name(::LinearEquationOfState) = "LinearEOS"
@@ -176,7 +190,7 @@ prefix = "ice_shelf_meltwater_outflow_2d_$(eos_name(eos))_"
 #####
 
 # Wizard utility that calculates safe adaptive time steps.
-wizard = TimeStepWizard(cfl=0.2, Δt=1second, max_change=1.2, max_Δt=10second)
+wizard = TimeStepWizard(cfl=0.1, Δt=1second, max_change=1.2, max_Δt=10second)
 
 # Number of time steps to perform at a time before printing a progress
 # statement and updating the adaptive time step.
@@ -188,7 +202,7 @@ dcfl = DiffusiveCFL(wizard)
 
 function progress_statement(simulation)
     model = simulation.model
-    C_mw = model.tracers.meltwater  # Convinient alias
+    C_mw = model.tracers.meltwater  # Convenient alias
     
     # add passive meltwater tracer at source, remove at boundary
     C_mw.data[source_corners[1][1]:source_corners[2][1],source_corners[1][2]:source_corners[2][2],source_corners[1][3]:source_corners[2][3]] .= 1
@@ -216,20 +230,25 @@ function progress_statement(simulation)
             progress, i, t / day, umax, vmax, wmax, cfl(model), νmax, κmax, dcfl(model), wizard.Δt)
 end
 
+_ω = get_vorticity(model)
+# display(_ω)
+# @show typeof(_ω)
+
 # Simulation that manages time stepping.
 simulation = Simulation(model, Δt=wizard, stop_time=end_time, progress=progress_statement, progress_frequency=Ni)
 
 simulation.output_writers[:fields] =
-    NetCDFOutputWriter(model, fields, filename = prefix * "fields.nc",
-                       interval = 6hour, output_attributes = output_attributes)
+    NetCDFOutputWriter(model, fields, filename = prefix * "fields_vort_test.nc",
+                       interval = 6hour, output_attributes = output_attributes,
+		       dimensions = dimensions)
 
 simulation.output_writers[:along_channel_slice] =
-    NetCDFOutputWriter(model, fields, filename = prefix * "along_channel_yz_slice.nc",
+    NetCDFOutputWriter(model, fields, filename = prefix * "along_channel_yz_slice_vort_test.nc",
                        interval = 5minute, output_attributes = output_attributes,
-                       xC = 1, xF = 1)
+                       dimensions = dimensions, xC = 1, xF = 1)
 
 run!(simulation)
 
-for ow in model.output_writers
+for ow in simulation.output_writers
     ow isa NetCDFOutputWriter && close(ow)
 end
