@@ -1,6 +1,6 @@
 using DelimitedFiles, Printf
 using Plots
-using CuArrays
+using CuArrays, CUDAnative, CUDAdrv
 
 using Oceananigans
 using Oceananigans.Diagnostics
@@ -25,6 +25,8 @@ const φ = -75  # degrees latitude
 #####
 
 arch = GPU()
+device!(CuDevice(0))
+
 FT = Float64
 
 Nx = 128 
@@ -35,7 +37,7 @@ Lx = 5km
 Ly = 5km
 Lz = 300 
 
-end_time = 7day
+end_time = 1day
 
 # Make up temperature profiles
 zC = collect(((-Lz:Lz/Nz:0).+Lz/(2*Nz))[1:end-1])
@@ -53,9 +55,10 @@ end
 #####
 
 # Meltwater source location - implemented as a box
-source_corners_m = ((2400,1,1),(2600,100,25))
+source_corners_m = ((2000,1,1),(3000,20,25))
+# source_corners_m = ((0,1,1),(5000,20,5)) 
+#dimensions - point (200,100,25), line (5000,20,5)
 
-# dimensions - point (200,100,25), line (5000,20,5)
 N = (Nx,Ny,Nz)
 L = (Lx,Ly,Lz)
 source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corners_m[2].*N./L)))
@@ -63,7 +66,7 @@ source_corners = (Int.(ceil.(source_corners_m[1].*N./L)),Int.(ceil.(source_corne
 λ = 1/(60)  # Relaxation timescale [s⁻¹].
 
 # Temperature and salinity of the meltwater outflow.
-T_source = 3.0
+T_source = 3.0 
 S_source = 34.0
 
 # Specify width of stable relaxation area
@@ -192,7 +195,7 @@ prefix = "ice_shelf_meltwater_outflow_3d_$(eos_name(eos))_"
 #####
 
 # Wizard utility that calculates safe adaptive time steps.
-wizard = TimeStepWizard(cfl=0.2, Δt=1second, max_change=1.2, max_Δt=30second)
+wizard = TimeStepWizard(cfl=0.1, Δt=1second, max_change=1.2, max_Δt=30second)
 
 # Number of time steps to perform at a time before printing a progress
 # statement and updating the adaptive time step.
